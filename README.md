@@ -1,132 +1,150 @@
-# Window Border — 给没有窗口装饰的窗口加边框的 KWin 效果插件
+# Window Border — 给没有窗口装饰的窗口加原生边框
 
-Wayland 会话下，很多窗口完全没有（或几乎没有）可见的窗口边界：
+Wayland 会话下，很多窗口完全没有可见的窗口边界：
 
-- GTK / libadwaita、Electron、**Tauri（WebKitGTK）** 等应用自己画 CSD 装饰，或者干脆设置 `decorations: false`；
-- KWin 只会给「自己创建了服务端装饰」的窗口画标题栏和边框，这类 CSD 窗口对 KWin 来说就是一块光秃秃的矩形。
+- **Tauri / WebView 应用**（`decorations: false`）自己画标题栏，KWin 这边既没有标题栏、也没有边框；
+- **GTK / libadwaita** 应用自己画 CSD；
+- 对 KWin 来说它们就是一块光秃秃的矩形，和桌面背景、以及多个窗口之间都难以分辨（深色壁纸或透明终端上尤其明显）。
 
-结果是：窗口和桌面背景、以及多个窗口互相之间难以分辨（尤其在平铺/重叠、深色壁纸或透明终端上）。
+这个项目给这类应用加**一圈原生边框**：用 KWin 的窗口规则强制出服务端装饰，再用 Breeze 的「窗口特定覆盖」把标题栏藏掉、边框设为 0，只留那条 1px 的 outline。边框是 KWin 自己画的，所以拖拽、动画、遮挡、圆角、多屏缩放全都不用操心，鼠标还能拖左右/下边缩放窗口。
 
-这个插件是一个 **KWin 合成器效果（Effect）**，在合成场景之上给窗口画一圈可配置的彩色边框：
+两个入口，都立即生效：
 
-- 默认**只给没有 KWin 装饰的窗口**画（也就是上面那类窗口），也可以配置成给所有窗口画；
-- 默认**每个屏幕只给最前面的那个窗口**画（`TopmostPerScreen=true`）——这比"只给活动窗口画"稳定：鼠标移到另一块屏、或焦点变化都不会把边框带走。也可以用 `TopmostPerScreen=false` + `ActiveWindowOnly=true/false` 换成"只给活动窗口"或"所有窗口都画"；
-- 被画边框的那个窗口可以用不同颜色、更粗的边框；
-- 可选按应用派生不同颜色（提高多窗口辨识度）；
-- 用户拖动/缩放窗口期间，以及窗口被动画做了几何变换的那些帧，不画边框（边框只会跟不上窗口、拖出残影）；
-- **正确处理窗口遮挡**：边框被上层窗口盖住的部分不会被画出来（不会出现下层的边框糊在上层窗口上的问题）；
-- 支持 OpenGL 合成和 QPainter（软件）合成两种后端。
+- **窗口菜单**（`Alt+F3` 或标题栏右键 →「扩展」→「窗口边框」）：给当前窗口的应用加/去边框；
+- **设置面板**（系统设置 → 窗口管理 → KWin 脚本 → Window Border → 配置）：维护「启用的应用」名单。
 
-![默认行为：只有没有 KWin 装饰的 zenity(CSD) 窗口有红框，konsole 有服务端装饰因此不画](docs/example-undecorated-only.png)
+两处都只是发起请求，真正写配置的是同一个后端 `tools/windowborder-native.py` —— 它同时也是命令行工具。
 
-上图是**默认配置**（`BorderOnDecoratedWindows=false`）：zenity 是 GTK/CSD 窗口（KWin 没有给它装饰），所以画了红框；konsole 有自己的服务端装饰，因此不画。
-
-![BorderOnDecoratedWindows=true 时所有窗口都画，绿色为后台窗口、红色为活动窗口](docs/example.png)
-
-上图是 `BorderOnDecoratedWindows=true` + `ActiveWindowOnly=false` 时的效果：绿色 = 非活动窗口，红色 = 活动窗口，且下层窗口被上层窗口遮住的部分不会被画出来。
-
-（截图来自嵌套 KWin 虚拟输出，用 zenity 作为 CSD 窗口、konsole 作为有装饰窗口测试。）
-
-## 两种做法
-
-这个仓库里有两条路径，目标相同（让没有可见边界的窗口可辨识），但**层次完全不同**：
-
-|  | 方案 A：合成器效果插件 | 方案 B：原生装饰（推荐，无需编译） |
-| --- | --- | --- |
-| 实现 | `src/`（C++/Qt6 效果插件） | `tools/windowborder-native.py`（纯配置） |
-| 边框是谁画的 | 插件自己在合成画面上叠一层 | **KWin 自己画**（Breeze 装饰的 border outline） |
-| 跟随拖拽 / 动画 / 遮挡 / 圆角 / 多屏缩放 | 插件自己处理，一堆边界情况 | 由 KWin 场景图负责，无需处理 |
-| 鼠标拖边框缩放窗口 | 做不到 | 原生支持 |
-| 按应用启用 | 可以 | 可以 |
-| 边框外观 | 任意颜色/粗细 | 跟随 Breeze 主题与配色方案 |
-
-方案 A 为了在错误的层次上画边框，付出了一长串 workaround（见「已知限制」）；
-方案 B 把这些全部交还给 KWin 自己的装饰管线。**优先用方案 B**，方案 A 保留给
-需要自定义边框颜色的场景。
-
-## 方案 B：原生装饰（按应用启用）
+## 安装
 
 ```bash
-tools/windowborder-native.py add dbx      # 给 dbx 这个应用加边框
-tools/windowborder-native.py status       # 看当前状态
-tools/windowborder-native.py set BorderSize Tiny
-tools/windowborder-native.py remove dbx
-tools/windowborder-native.py reset        # 清掉本工具的全部配置
+tools/kwin-windowborder-menu-setup.sh install
 ```
 
-### 原理
+不需要 root。这个命令做四件事：
 
-两步配置，都是 KWin/Breeze 的原生机制，没有任何自研插件：
+1. `kpackagetool6 --type KWin/Script` 安装 `extension/`（装到 `~/.local/share/kwin/scripts/windowborder-menu`）；
+2. 在 `~/.config/systemd/user/` 写三个 systemd 用户单元（见下面「为什么需要 systemd 单元」）；
+3. 在 `kwinrc [Plugins]` 打开 `windowborder-menuEnabled` 并 `reconfigure`；
+4. 按现有名单同步一次规则。
 
-1. **KWin 窗口规则**（`~/.config/kwinrulesrc`）：`noborder=false` + `noborderrule=2`
-   （即「无标题栏和边框 = 否，强制」）。`rules.cpp` 里 `checkDecorationPolicy()`：
+其它子命令：`status` / `reapply` / `uninstall`。
+
+## 使用
+
+### 窗口菜单
+
+```
+Alt+F3 或 标题栏右键
+└── 扩展
+    └── 窗口边框
+        ├── 已启用边框：dbx        ← 勾选状态 = 这个应用当前在不在名单里
+        └── 重新应用边框设置
+```
+
+点第一项就是「加/去边框」，1~2 秒后生效（后端要写配置，再让 KWin 和每个装饰重新读一次）。
+
+### 设置面板
+
+系统设置 → 窗口管理 → KWin 脚本 → **Window Border** → 配置，一行「启用的应用」，逗号分隔的窗口类（Wayland 的 `app_id`，例如 `dbx,deepseek-harness-desktop`）。
+
+保存后面板只是写了 `kwinrc [Script-windowborder-menu] apps`，由 systemd path 单元发现并触发同步，所以同样是立即生效。
+
+### 命令行（同一份逻辑，不走扩展）
+
+```bash
+tools/windowborder-native.py add dbx                 # 给应用加边框
+tools/windowborder-native.py remove dbx              # 取消
+tools/windowborder-native.py status                  # 查看状态
+tools/windowborder-native.py set BorderSize Tiny     # 换边框粗细
+tools/windowborder-native.py set HideTitleBar false  # 保留标题栏（见「已知限制」）
+tools/windowborder-native.py apply                   # 按当前配置重新生成并生效
+tools/windowborder-native.py reset                   # 清掉本工具的全部配置
+```
+
+`add` / `remove` / `set` 内部本来就等于「改配置 + apply」，所以它们一直都是即时生效的。`apply` 单独存在是给「不改配置、只重新生成并生效」用的，主要用于：手改了 `~/.config/windowborder-native.conf`；规则被 KWin 升级、或你在「系统设置 → 窗口规则」里手动删掉而丢失；或者装饰没拿到最新覆盖（下面那个 KGlobalSettings 竞态）时重试。
+
+## 原理
+
+两步都是 KWin/Breeze 的原生机制，没有自研插件、没有补丁。
+
+1. **KWin 窗口规则**（`~/.config/kwinrulesrc`）：每个应用一条 `wmclass=<app_id>` 精确匹配的规则，`noborder=false` + `noborderrule=2`（「无标题栏和边框 = 否，强制」）。`rules.cpp` 里 `checkDecorationPolicy()`：
 
    ```cpp
    if (checkNoBorder(true, init) == false) return DecorationPolicy::Server;
    ```
 
-   于是该窗口的 decorationPolicy 变成 `Server`，KWin 为它创建服务端装饰，
-   并通过 `xdg-decoration` 发 `configure(server_side)` 通知客户端。
+   于是该窗口的 `decorationPolicy` 变成 `Server`，KWin 为它创建服务端装饰，并通过 `xdg-decoration` 发 `configure(server_side)` 通知客户端。
 
-2. **Breeze 窗口特定覆盖**（`~/.config/breezerc`，组 `[Windeco Exception N]`）：
-   按窗口类正则匹配（`windowClass()` 返回 `"<resourceName> <resourceClass>"`），
-   设 `HideTitleBar=true` + `BorderSize=None` + `Mask=16`。于是：
+2. **Breeze 窗口特定覆盖**（`~/.config/breezerc`，组 `[Windeco Exception N]`）：按窗口类匹配，设 `HideTitleBar=true`、`BorderSize=None`、`Mask=16`。于是：
 
-   - `borders()` 全为 0 → **窗口几何完全不变**，不挤压客户端内容；
-   - 不画标题栏 → 不会和客户端自己的标题栏叠成双层；
-   - 仍然保留 1px 的 border outline → 这就是可见的边框，活动/非活动配色不同；
-   - `BorderSize=None` 时 Breeze 会 `setResizeOnlyBorders(左右/下)` →
-     **鼠标拖这三条边可以缩放窗口**（KWin 里 `inputRegion = outerRect - innerRect`，
-     且 resizeOnlyBorders 不影响窗口几何）。
+   - 边框为 0 → **窗口几何完全不变**，不挤压客户端内容；
+   - 隐藏标题栏 → 不会和客户端自己画的标题栏叠成双层；
+   - 保留 1px outline → 这就是可见的边框（活动/非活动配色不同）；
+   - `BorderSize=None` 时 Breeze 会 `setResizeOnlyBorders(左右/下)` → 鼠标拖这三条边可以缩放窗口（`inputRegion = outerRect - innerRect`）。
 
-改完配置后的生效方式（工具已内置）：
+**为什么标题栏一定要藏**：我们处理的窗口本来就是「无系统标题栏 + 无装饰」（Tauri/WebView 自绘标题栏，或者 GTK 画 CSD），强制服务端装饰之后装饰自带的标题栏必须藏掉 —— 不藏的话，遵守 `xdg-decoration` 的客户端会撤掉自己的 CSD、换上一个 Breeze 标题栏；不遵守的（Tauri `decorations:false`）会变成「应用自己的标题栏 + Breeze 标题栏」双层。反过来，**有系统标题栏的窗口必然已经有窗口装饰**，它们不在处理范围内。所以 `HideTitleBar=true` + `BorderSize=None` 是写死的默认值，设置面板里也不需要这个开关。
+
+生效方式（后端内置）：
 
 ```bash
 qdbus6 org.kde.KWin /KWin org.kde.KWin.reconfigure
-# 等 KWin 处理完（reconfigure 是 Q_NOREPLY），再让每个装饰重取设置：
+# reconfigure 是 Q_NOREPLY，等 KWin 处理完（它会重新解析 breezerc），
+# 再让每个装饰重取一次设置 —— Breeze 的 Decoration::reconfigure() 挂在这个信号上：
 dbus-send --session --type=signal /KGlobalSettings \
           org.kde.KGlobalSettings.notifyChange int32:0 int32:0
 ```
 
-第二步不能省：Breeze 的 `Decoration::reconfigure()` 挂在这个信号上。
+第二步不能省，否则装饰拿到的是上一轮的覆盖（表现为「慢一拍生效」）。
 
-### 为什么不是自己写一个「只画边框」的装饰插件
+### 为什么不是自研效果 / 自研装饰插件
 
-一度想这么做（KDecoration3 是公开插件 API），但有个硬约束：
+- **自研 KWin 效果（C++）**：画边框必须写二进制效果插件（KWin 脚本没有绘制能力）。但那样就等于在合成层之上再画一层，拖拽、窗口动画、遮挡、圆角、多屏缩放全得自己处理，还处理不干净（本项目早期版本就是这么做的，已经删掉了）。原生装饰把这些交还给 KWin 场景图。
+- **自研装饰插件**：`DecorationBridge` 全局只加载**一个**装饰插件（`kwinrc [org.kde.kdecoration2] library`），窗口规则里也没有按窗口选插件的选项。自研插件一旦启用就是全桌面生效，非名单内的窗口会全部失去标题栏 —— 除非在插件里重新实现一整套标准装饰。
+- 正确做法就是 Breeze **自带的**窗口特定覆盖：它本身就是「装饰插件读配置文件、按应用生效」。
 
-`DecorationBridge` 全局只加载**一个**装饰插件（`kwinrc [org.kde.kdecoration2] library`），
-窗口规则里也没有按窗口选插件的选项。所以自研插件一旦启用就是全桌面生效，
-非名单内的窗口会全部失去标题栏——除非在插件里为它们重新实现一整套标准装饰。
+### 为什么需要 systemd 单元
 
-正确做法是用 Breeze **自带的**窗口特定覆盖，也就是上面第 2 步：它本身就是
-「装饰插件读配置文件、按应用生效」。
+KWin 脚本（`KWin/Script` 的 JS 扩展）能用的 API 只有 `readConfig` / `callDBus` / `registerShortcut` / 屏幕边缘 / `registerUserActionsMenu` / `workspace` / `options` / `QTimer`（见 kwin 源码 `src/scripting/scripting.cpp` 里的 `globalProperties` 列表）—— **不能写文件，也不能起进程**。而加边框必须改 `~/.config/kwinrulesrc` 和 `~/.config/breezerc`。所以扩展只做 UI，把「要做什么」用 `callDBus` 交给后端：
 
-### 已知限制（方案 B）
+| 单元 | 作用 |
+| --- | --- |
+| `windowborder@.service`（模板） | 菜单点击 → 脚本 `callDBus` 调 systemd 的 `StartUnit("windowborder@add:dbx.service")`，请求就写在单元实例名里；单元执行 `windowborder-native.py request add:dbx` |
+| `windowborder-watch.path` | 盯着 `kwinrc`（`PathChanged=` / `PathModified=`）；设置面板一保存就触发 |
+| `windowborder-watch.service` | 执行 `windowborder-native.py request panel`，把面板里的名单同步成规则 |
 
-- **`decorationPolicy` 是单向的**：加规则会变 `Server`，删规则不会自动回滚
-  （`Window::applyWindowRules()` 里是 `setDecorationPolicy(decorationPolicy())`，
-  把当前值又传了回去）。所以 `remove` 之后，那个窗口要**重启应用**才会完全恢复
-  客户端自带装饰。
-- **会遵守协议的客户端会失去自己的标题栏**。GTK/libadwaita 这类应用收到
-  `server_side` 后会撤掉 CSD，于是窗口变成「只有边框、没有标题栏」。
-  如果想让它们保留标题栏，用 `set HideTitleBar false`。（实测：`dbx` 属于此类。）
-- **不遵守协议的客户端会保留自己的标题栏**，于是结果是「应用自己的标题栏 +
-  一圈边框」——这**不是**双层标题栏（Tauri `decorations:false` 这类应用属于此类，
-  实测：`deepseek-harness-desktop`。）
-- **上边不能拖动缩放**。这是「隐藏标题栏」的直接副作用，不是配置错误：Breeze 的
-  `recalculateBorders()` 里
+几点说明：
+
+- **单元实例名只允许 `[A-Za-z0-9:_.\-]`**，所以应用名在 JS 侧编码（`_hh` 两位十六进制 / `_uhhhh` 四位），后端 `decode_token()` 解回来，任何 `app_id` 都能传过去；
+- **缺了它们会怎样**：菜单和面板照常出现，但点击没有任何效果（KWin 日志里是 D-Bus 找不到单元）；命令行 `windowborder-native.py add/remove/apply` 完全不受影响（它不需要 systemd）；面板那条路没有 path 单元的话，改完名单要等下一次菜单操作或重新登录才生效；
+- **KDE 扩展本身装不了 systemd 单元**：`KWin/Script` 的 KPackage 就是一堆文件，`kpackagetool6 -i` 只做拷贝，没有安装钩子，KWin 也不会替脚本跑命令。要么像本仓库这样用安装脚本（`tools/kwin-windowborder-menu-setup.sh install`），要么做成发行版包把单元放到 `/usr/lib/systemd/user/`。想让扩展「自安装」，只能再写一个自定义 KCM 或常驻进程 —— 那比这个桥复杂得多；
+- 想换后端（比如改成 C++/Qt 的 D-Bus 助手）只需要改脚本里 `sendRequest()` 那一处，其余不用动。
+
+### kwinrc 里的名单和 mirror
+
+`kwinrc [Script-windowborder-menu]` 里有两个键：
+
+- `apps`：设置面板编辑的就是它（`extension/contents/config/main.xml` 里声明的唯一配置项）；
+- `mirror`：后端上一次镜像写下的值。用来区分「面板改了名单」和「我们自己回写造成的回声」，也用来区分「键根本不存在」。
+
+语义（`panel_changed_list()`）：`apps` 不存在 → 不当成指令，什么都不做；`apps` 等于 `mirror` → 是回声；其它 → 以 `apps` 为准（空字符串 = 清空名单）。没有 `mirror` 这一层的话，一个键被误删就会被当成「用户清空了名单」，把规则和 Breeze 覆盖一起清掉。
+
+### 一个坑：`[Plugins]` 键是效果和脚本共用的
+
+KWin 的效果和脚本都从 `kwinrc [Plugins]` 读 `<id>Enabled`。所以脚本 id **不能**叫 `windowborder`（那会和同名的 C++ 效果抢同一个键，互相把对方打开），这里的脚本叫 `windowborder-menu`，配置组因此是 `[Script-windowborder-menu]`。
+
+## 已知限制
+
+- **`decorationPolicy` 是单向的**：加规则会变 `Server`，删规则不会自动回滚（`Window::applyWindowRules()` 里是 `setDecorationPolicy(decorationPolicy())`，把当前值又传了回去）。所以 `remove` 之后，那个窗口要**重启应用**才会完全恢复客户端自带的装饰。
+- 会遵守 `xdg-decoration` 的客户端（GTK/libadwaita）收到 `server_side` 后会撤掉自己的 CSD，于是窗口变成「只有边框、没有标题栏」。想让它们保留标题栏，用 `set HideTitleBar false`。
+- 不遵守协议的客户端（Tauri `decorations:false`）会保留自己画的标题栏，结果是「应用自己的标题栏 + 一圈边框」——这不是双层标题栏。
+- **上边不能拖动缩放**：这是「隐藏标题栏 + `BorderSize=None`」的直接副作用，不是配置错误。Breeze 的 `recalculateBorders()` 里
 
   ```cpp
   setResizeOnlyBorders(QMarginsF(extSides, 0, extSides, extBottom));   // 顶边恒为 0
   ```
 
-  顶边能不能抓，取决于装饰边框区 `borders().top()` 是否 > 0（边框区本身也算输入区，
-  `inputRegion = outerRect - innerRect`）。正常窗口的顶边能缩放，是因为标题栏本身处理
-  顶边拖动——libkdecorations3 用 `borders.top()` 和 titleBar 矩形判定 `TopSection`。
-  标题栏一隐藏、`BorderSize=None` 时 `borders.top()` 归零，顶边就没有落点了。
-
-  想让顶边也能缩放，只能选一个非 `None` 的 `BorderSize`，代价是出现可见实边框并改变
-  窗口几何。以下是各档在 `dbx` 上实测的像素占用：
+  想让顶边也能抓，只能选一个非 `None` 的 `BorderSize`，代价是出现可见实边框并改变窗口几何。各档实测像素占用：
 
   | `BorderSize` | 上 | 下 | 左 | 右 | 说明 |
   | --- | --- | --- | --- | --- | --- |
@@ -135,127 +153,27 @@ dbus-send --session --type=signal /KGlobalSettings \
   | `Tiny` | 4 | 4 | 2 | 2 | 四面实边框，四条边都可缩放 |
   | `Normal` | 4 | 4 | 4 | 4 | 同上，更粗 |
 
-- **边框颜色跟随主题**，不是任意颜色；`BorderSize=None` 只有 1px 细线，
-  想要明显的实边框用 `Tiny` / `Normal`（会让窗口几何变大）。
+- 边框**颜色跟随 Breeze 主题与配色方案**，不能单独指定；`BorderSize=None` 只有 1px 细线。
 - 全屏窗口不受影响（`preferredDecorationMode()` 对 fullscreen 直接返回 `None`）。
-
-## 为什么不写 KWin 脚本
-
-KWin Script（JavaScript）只能读/改窗口几何、调用 API，**没有绘制能力**，无法在屏幕上画边框。画东西必须写二进制效果插件（C++）。所以这里是一个 C++/Qt6 的 Effect 插件。
-
-## 环境要求
-
-- KWin **6.7**（本插件按 6.7.5 的 effect API 编写，KWin 每次大版本升级后需要重新编译）；
-- 构建依赖（KDE neon / Ubuntu 系）：
-
-```bash
-sudo apt install kwin-dev kf6-extra-cmake-modules qt6-declarative-dev ninja-build cmake g++
-```
-
-## 构建与安装
-
-```bash
-cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
-cmake --build build
-sudo cmake --install build
-```
-
-安装位置是 Qt 插件目录下的 KWin 效果目录：
-
-```
-/usr/lib/x86_64-linux-gnu/qt6/plugins/kwin/effects/plugins/windowborder.so
-```
-
-> 注意：KWin 只扫描 Qt 的插件搜索路径（标准系统目录 + `QT_PLUGIN_PATH`）。如果安装到 `/usr/local` 或 `~/.local`，需要把对应目录加入 `QT_PLUGIN_PATH`（例如写进 `~/.config/plasma-workspace/env/*.sh` 后重新登录），否则 KWin 找不到插件。
-
-## 启用 / 禁用
-
-装好之后（系统目录安装无需重新登录）：
-
-```bash
-# 立即加载并写入配置，下次登录自动启用
-tools/kwin-windowborder-setup.sh enable
-
-# 关闭
-tools/kwin-windowborder-setup.sh disable
-
-# 查看当前配置
-tools/kwin-windowborder-setup.sh status
-```
-
-等价的手工命令（注意：**已经在运行的实例不会因为覆盖 .so 而更新**，必须 `unloadEffect` 之后再 `loadEffect`，否则跑的还是旧代码）：
-
-```bash
-kwriteconfig6 --file kwinrc --group Plugins --key windowborderEnabled true
-qdbus6 org.kde.KWin /Effects org.kde.kwin.Effects.unloadEffect windowborder
-qdbus6 org.kde.KWin /Effects org.kde.kwin.Effects.loadEffect windowborder
-```
-
-启用后可以在「系统设置 → 桌面效果（Desktop Effects）」里找到 **Window Border / 窗口边框**。
-
-## 配置项
-
-配置文件 `~/.config/kwinrc`，组 `[Effect-windowborder]`：
-
-| 键 | 默认值 | 说明 |
-| --- | --- | --- |
-| `Enabled` | `true` | 效果总开关（不卸载插件也能临时停用） |
-| `BorderWidth` | `2` | 边框粗细（像素），`0` 表示不画 |
-| `ActiveBorderWidth` | `0` | 活动窗口边框粗细，`0` 表示与 `BorderWidth` 相同 |
-| `BorderPlacement` | `inside` | 边框位置：`inside`（窗口内缘）/ `center`（骑在边缘上）/ `outside`（窗口外缘） |
-| `ActiveColor` | `#3daee9` | 活动窗口颜色（`#RRGGBB` 或 `#AARRGGBB`） |
-| `InactiveColor` | `#80000000` | 非活动窗口颜色；默认半透明黑，注意 `#80000000` 是 AARRGGBB（alpha=0x80） |
-| `BorderOnDecoratedWindows` | `false` | 是否也给「有 KWin 装饰」的窗口画边框（`false` = 只处理没有装饰的窗口） |
-| `TopmostPerScreen` | `true` | 每个屏幕只给最前面（栈顶）的那个窗口画边框。它由窗口栈序决定，和"当前活动窗口"无关，所以鼠标在两块屏之间移动不会把边框带走 |
-| `ActiveWindowOnly` | `true` | 仅在 `TopmostPerScreen=false` 时生效：只给当前活动窗口画边框（`false` = 所有窗口都画） |
-| `ExcludeFullScreen` | `true` | 全屏窗口不画 |
-| `ExcludeMaximized` | `false` | 最大化窗口不画 |
-| `HideWhileMoving` | `true` | 用户拖动/缩放窗口期间不画边框（拖动时边框跟不上窗口，只会拖出一条条残影） |
-| `PerWindowColors` | `false` | 按应用名（windowClass）派生不同色相，非活动窗口各用一色 |
-
-示例：
-
-```bash
-tools/kwin-windowborder-setup.sh set BorderWidth 3
-tools/kwin-windowborder-setup.sh set ActiveColor '#00d1ff'
-tools/kwin-windowborder-setup.sh set InactiveColor '#60000000'
-tools/kwin-windowborder-setup.sh set BorderOnDecoratedWindows true
-tools/kwin-windowborder-setup.sh set PerWindowColors true
-tools/kwin-windowborder-setup.sh set HideWhileMoving false
-```
-
-或者直接改 `kwinrc` 后执行：
-
-```bash
-qdbus6 org.kde.KWin /KWin reconfigure
-```
+- 从点击到看见边框大约 1~2 秒：后端写文件 → `reconfigure` → 等 KWin 和装饰重取设置。
+- 规则只作用于普通窗口（`types=1`）；面板、桌面、通知、工具提示不处理。
 
 ## 卸载
 
 ```bash
-tools/kwin-windowborder-setup.sh disable
-sudo rm /usr/lib/x86_64-linux-gnu/qt6/plugins/kwin/effects/plugins/windowborder.so
+tools/kwin-windowborder-menu-setup.sh uninstall   # 卸载扩展 + systemd 单元，保留已生成的规则
+tools/windowborder-native.py reset                # 连 kwinrulesrc 规则和 Breeze 覆盖一起清掉
 ```
-
-## 已知限制
-
-- 边框是**直角矩形**，不跟随窗口自身的圆角；带圆角的 CSD 窗口四角可能有一两个像素的方形痕迹。
-- 用户拖动/缩放窗口期间不画边框（`HideWhileMoving`）；被动画/特效做了几何变换的窗口（最大化动画、wobbly windows 等）当帧也不画，因为这时窗口画在哪儿和 `frameGeometry()` 不一致，画出来只会错位。
-- Overview / Desktop Grid / Zoom 等全屏效果、以及整个屏幕被变换（桌面滑动切换等）的当帧，本效果自动停止绘制（否则位置会错）。
-- 遮挡是**按窗口矩形**近似计算的，不考虑不规则窗口形状和半透明区域（透明度 > 0.5 的上层窗口视为遮挡）。
-- 只对普通窗口（Normal / Dialog / Utility）生效；桌面、面板、菜单、通知、工具提示等不画。
 
 ## 目录结构
 
 ```
-CMakeLists.txt                       构建脚本
-src/windowborder.h / .cpp            方案 A：效果实现
-src/main.cpp                         插件工厂（KWIN_EFFECT_FACTORY）
-src/windowborder.json                插件元数据（System Settings 里显示的名称等）
-tools/kwin-windowborder-setup.sh     方案 A：启用/禁用/配置辅助脚本
-tools/windowborder-native.py         方案 B：按应用启用原生边框（无需编译）
-docs/example.png                     效果截图（所有窗口都画）
-docs/example-undecorated-only.png    效果截图（默认：只画无装饰窗口）
+extension/metadata.json                    KWin 脚本扩展元数据（KPackage，KWin/Script）
+extension/contents/code/main.js            窗口菜单：加/去边框、重新应用
+extension/contents/config/main.xml         设置面板的配置项（apps）
+extension/contents/ui/config.ui            设置面板界面
+tools/windowborder-native.py               后端 + 命令行（同一份逻辑）
+tools/kwin-windowborder-menu-setup.sh      安装/卸载/状态
 ```
 
 ## 许可

@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+  <class>KWin::WindowBorderConfigForm</class>
+  <widget class="QWidget" name="KWin::WindowBorderConfigForm">
+    <property name="geometry">
+      <rect>
+        <x>0</x>
+        <y>0</y>
+        <width>520</width>
+        <height>96</height>
+      </rect>
+    </property>
+    <property name="windowTitle">
+      <string>Window Border</string>
+    </property>
+    <layout class="QFormLayout" name="formLayout">
+      <item row="0" column="0">
+        <widget class="QLabel" name="labelApps">
+          <property name="text">
+            <string>启用的应用</string>
+          </property>
+        </widget>
+      </item>
+      <item row="0" column="1">
+        <widget class="QLineEdit" name="kcfg_apps">
+          <property name="placeholderText">
+            <string>逗号分隔的窗口类（Wayland app_id），例如 dbx,deepseek-harness-desktop</string>
+          </property>
+        </widget>
+      </item>
+      <item row="1" column="1">
+        <widget class="QLabel" name="labelHint">
+          <property name="text">
+            <string>也可以不写在这里：用窗口菜单（Alt+F3 或标题栏右键）→ 扩展 → 窗口边框，直接给当前应用加/去边框。改完点「应用」即刻生效。</string>
+          </property>
+          <property name="wordWrap">
+            <bool>true</bool>
+          </property>
+        </widget>
+      </item>
+    </layout>
+  </widget>
+  <resources/>
+  <connections/>
+</ui>

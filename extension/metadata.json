@@ -1,0 +1,22 @@
+{
+    "KPackageStructure": "KWin/Script",
+    "X-Plasma-API": "javascript",
+    "X-Plasma-MainScript": "code/main.js",
+    "X-KDE-ConfigModule": "kwin/effects/configs/kcm_kwin4_genericscripted",
+    "KPlugin": {
+        "Id": "windowborder-menu",
+        "Name": "Window Border",
+        "Name[zh_CN]": "窗口边框",
+        "Description": "Adds a \"Window Border\" submenu to the window menu (Alt+F3 or right-click on the titlebar) that gives an application the native KWin/Breeze window border",
+        "Description[zh_CN]": "在窗口菜单（Alt+F3 或标题栏右键）里增加“窗口边框”子菜单：给当前应用加/去 KWin/Breeze 原生边框，并可在设置面板里维护启用的应用列表",
+        "Version": "1.0",
+        "License": "GPL-2.0-or-later",
+        "Icon": "preferences-system-windows-script-test",
+        "EnabledByDefault": false,
+        "Authors": [
+            {
+                "Name": "rlj"
+            }
+        ]
+    }
+}
