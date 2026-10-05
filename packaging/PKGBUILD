@@ -12,11 +12,11 @@ pkgver=1.0
 pkgrel=1
 pkgdesc="Window menu entry and settings panel that give an application the native KWin/Breeze window border"
 arch=('any')
-url="https://example.invalid/kwin-windowborder"
+url="https://github.com/ruanimal/kwin-windowborder"
 license=('GPL-2.0-or-later')
 depends=('kwin' 'python' 'python-dbus' 'python-gobject')
 options=('!strip')
-source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/${pkgver}.tar.gz")
+source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/refs/tags/v${pkgver}.tar.gz")
 sha256sums=('SKIP')
 
 package() {
@@ -48,7 +48,7 @@ X-GNOME-Autostart-enabled=true
 X-KDE-autostart-after=plasma-shell
 EOF
 
-    install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE" 2>/dev/null || true
+    install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
 }
 
 # 说明：这里没有用 packaging/install-layout.sh，因为 PKGBUILD 里展开 ${pkgdir}

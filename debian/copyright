@@ -1,6 +1,6 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: kwin-windowborder
-Source: https://example.invalid/kwin-windowborder
+Source: https://github.com/ruanimal/kwin-windowborder
 
 Files: *
 Copyright: 2025 KWin Window Border contributors

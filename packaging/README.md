@@ -51,7 +51,7 @@ KWin）。重登之后一切自动。
   里面也不能放可执行文件和 `.service`），所以只走 Store 的用户会看到菜单里提示
   「后端未安装」。要么再让用户装 deb，要么把 Store 只当"扩展本体 + 更新"渠道。
 - **发行版包**：把 `make-deb.sh` 的产物放进 PPA，或者把 `debian/` 提交给 OBS/Launchpad；
-  Arch 用户走 AUR（`PKGBUILD` 里的 `source` 换成真实地址）。
+  Arch 用户走 AUR（`packaging/PKGBUILD` 里的 `source` 指向 GitHub 上的 tag 归档）。
 - **源码**：`git clone && tools/kwin-windowborder-menu-setup.sh install`（用户级，不需要 root）。
 
 ## CI

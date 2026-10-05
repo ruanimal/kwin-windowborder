@@ -5,7 +5,7 @@ Maintainer: ruan.lj <ruan.lj@foxmail.com>
 Build-Depends: debhelper-compat (= 13)
 Standards-Version: 4.6.2
 Rules-Requires-Root: no
-Homepage: https://example.invalid/kwin-windowborder
+Homepage: https://github.com/ruanimal/kwin-windowborder
 
 Package: kwin-windowborder
 Architecture: all
