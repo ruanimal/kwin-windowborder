@@ -1,0 +1,20 @@
+{
+    "KPlugin": {
+        "Authors": [
+            {
+                "Name": "KWin Window Border effect contributors"
+            }
+        ],
+        "Category": "Appearance",
+        "Description": "Draw a coloured border around windows, including windows without server-side decorations",
+        "Description[zh_CN]": "为窗口绘制彩色边框，包括没有服务端装饰的窗口",
+        "EnabledByDefault": false,
+        "Icon": "preferences-system-windows-effect",
+        "Id": "windowborder",
+        "License": "GPL-2.0-or-later",
+        "Name": "Window Border",
+        "Name[zh_CN]": "窗口边框",
+        "Version": "1.0.0"
+    },
+    "X-KDE-Ordering": "60"
+}
