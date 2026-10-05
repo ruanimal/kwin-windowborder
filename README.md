@@ -27,6 +27,118 @@ Wayland 会话下，很多窗口完全没有（或几乎没有）可见的窗口
 
 （截图来自嵌套 KWin 虚拟输出，用 zenity 作为 CSD 窗口、konsole 作为有装饰窗口测试。）
 
+## 两种做法
+
+这个仓库里有两条路径，目标相同（让没有可见边界的窗口可辨识），但**层次完全不同**：
+
+|  | 方案 A：合成器效果插件 | 方案 B：原生装饰（推荐，无需编译） |
+| --- | --- | --- |
+| 实现 | `src/`（C++/Qt6 效果插件） | `tools/windowborder-native.py`（纯配置） |
+| 边框是谁画的 | 插件自己在合成画面上叠一层 | **KWin 自己画**（Breeze 装饰的 border outline） |
+| 跟随拖拽 / 动画 / 遮挡 / 圆角 / 多屏缩放 | 插件自己处理，一堆边界情况 | 由 KWin 场景图负责，无需处理 |
+| 鼠标拖边框缩放窗口 | 做不到 | 原生支持 |
+| 按应用启用 | 可以 | 可以 |
+| 边框外观 | 任意颜色/粗细 | 跟随 Breeze 主题与配色方案 |
+
+方案 A 为了在错误的层次上画边框，付出了一长串 workaround（见「已知限制」）；
+方案 B 把这些全部交还给 KWin 自己的装饰管线。**优先用方案 B**，方案 A 保留给
+需要自定义边框颜色的场景。
+
+## 方案 B：原生装饰（按应用启用）
+
+```bash
+tools/windowborder-native.py add dbx      # 给 dbx 这个应用加边框
+tools/windowborder-native.py status       # 看当前状态
+tools/windowborder-native.py set BorderSize Tiny
+tools/windowborder-native.py remove dbx
+tools/windowborder-native.py reset        # 清掉本工具的全部配置
+```
+
+### 原理
+
+两步配置，都是 KWin/Breeze 的原生机制，没有任何自研插件：
+
+1. **KWin 窗口规则**（`~/.config/kwinrulesrc`）：`noborder=false` + `noborderrule=2`
+   （即「无标题栏和边框 = 否，强制」）。`rules.cpp` 里 `checkDecorationPolicy()`：
+
+   ```cpp
+   if (checkNoBorder(true, init) == false) return DecorationPolicy::Server;
+   ```
+
+   于是该窗口的 decorationPolicy 变成 `Server`，KWin 为它创建服务端装饰，
+   并通过 `xdg-decoration` 发 `configure(server_side)` 通知客户端。
+
+2. **Breeze 窗口特定覆盖**（`~/.config/breezerc`，组 `[Windeco Exception N]`）：
+   按窗口类正则匹配（`windowClass()` 返回 `"<resourceName> <resourceClass>"`），
+   设 `HideTitleBar=true` + `BorderSize=None` + `Mask=16`。于是：
+
+   - `borders()` 全为 0 → **窗口几何完全不变**，不挤压客户端内容；
+   - 不画标题栏 → 不会和客户端自己的标题栏叠成双层；
+   - 仍然保留 1px 的 border outline → 这就是可见的边框，活动/非活动配色不同；
+   - `BorderSize=None` 时 Breeze 会 `setResizeOnlyBorders(左右/下)` →
+     **鼠标拖这三条边可以缩放窗口**（KWin 里 `inputRegion = outerRect - innerRect`，
+     且 resizeOnlyBorders 不影响窗口几何）。
+
+改完配置后的生效方式（工具已内置）：
+
+```bash
+qdbus6 org.kde.KWin /KWin org.kde.KWin.reconfigure
+# 等 KWin 处理完（reconfigure 是 Q_NOREPLY），再让每个装饰重取设置：
+dbus-send --session --type=signal /KGlobalSettings \
+          org.kde.KGlobalSettings.notifyChange int32:0 int32:0
+```
+
+第二步不能省：Breeze 的 `Decoration::reconfigure()` 挂在这个信号上。
+
+### 为什么不是自己写一个「只画边框」的装饰插件
+
+一度想这么做（KDecoration3 是公开插件 API），但有个硬约束：
+
+`DecorationBridge` 全局只加载**一个**装饰插件（`kwinrc [org.kde.kdecoration2] library`），
+窗口规则里也没有按窗口选插件的选项。所以自研插件一旦启用就是全桌面生效，
+非名单内的窗口会全部失去标题栏——除非在插件里为它们重新实现一整套标准装饰。
+
+正确做法是用 Breeze **自带的**窗口特定覆盖，也就是上面第 2 步：它本身就是
+「装饰插件读配置文件、按应用生效」。
+
+### 已知限制（方案 B）
+
+- **`decorationPolicy` 是单向的**：加规则会变 `Server`，删规则不会自动回滚
+  （`Window::applyWindowRules()` 里是 `setDecorationPolicy(decorationPolicy())`，
+  把当前值又传了回去）。所以 `remove` 之后，那个窗口要**重启应用**才会完全恢复
+  客户端自带装饰。
+- **会遵守协议的客户端会失去自己的标题栏**。GTK/libadwaita 这类应用收到
+  `server_side` 后会撤掉 CSD，于是窗口变成「只有边框、没有标题栏」。
+  如果想让它们保留标题栏，用 `set HideTitleBar false`。（实测：`dbx` 属于此类。）
+- **不遵守协议的客户端会保留自己的标题栏**，于是结果是「应用自己的标题栏 +
+  一圈边框」——这**不是**双层标题栏（Tauri `decorations:false` 这类应用属于此类，
+  实测：`deepseek-harness-desktop`。）
+- **上边不能拖动缩放**。这是「隐藏标题栏」的直接副作用，不是配置错误：Breeze 的
+  `recalculateBorders()` 里
+
+  ```cpp
+  setResizeOnlyBorders(QMarginsF(extSides, 0, extSides, extBottom));   // 顶边恒为 0
+  ```
+
+  顶边能不能抓，取决于装饰边框区 `borders().top()` 是否 > 0（边框区本身也算输入区，
+  `inputRegion = outerRect - innerRect`）。正常窗口的顶边能缩放，是因为标题栏本身处理
+  顶边拖动——libkdecorations3 用 `borders.top()` 和 titleBar 矩形判定 `TopSection`。
+  标题栏一隐藏、`BorderSize=None` 时 `borders.top()` 归零，顶边就没有落点了。
+
+  想让顶边也能缩放，只能选一个非 `None` 的 `BorderSize`，代价是出现可见实边框并改变
+  窗口几何。以下是各档在 `dbx` 上实测的像素占用：
+
+  | `BorderSize` | 上 | 下 | 左 | 右 | 说明 |
+  | --- | --- | --- | --- | --- | --- |
+  | `None`（默认） | 0 | 0 | 0 | 0 | 只有 1px outline，几何零变化；左/右/下可缩放，**顶边不可** |
+  | `NoSides` | 4.5 | 4.5 | 0 | 0 | 上下为实边框，左右仍是 resize-only |
+  | `Tiny` | 4 | 4 | 2 | 2 | 四面实边框，四条边都可缩放 |
+  | `Normal` | 4 | 4 | 4 | 4 | 同上，更粗 |
+
+- **边框颜色跟随主题**，不是任意颜色；`BorderSize=None` 只有 1px 细线，
+  想要明显的实边框用 `Tiny` / `Normal`（会让窗口几何变大）。
+- 全屏窗口不受影响（`preferredDecorationMode()` 对 fullscreen 直接返回 `None`）。
+
 ## 为什么不写 KWin 脚本
 
 KWin Script（JavaScript）只能读/改窗口几何、调用 API，**没有绘制能力**，无法在屏幕上画边框。画东西必须写二进制效果插件（C++）。所以这里是一个 C++/Qt6 的 Effect 插件。
@@ -137,10 +249,11 @@ sudo rm /usr/lib/x86_64-linux-gnu/qt6/plugins/kwin/effects/plugins/windowborder.
 
 ```
 CMakeLists.txt                       构建脚本
-src/windowborder.h / .cpp            效果实现
+src/windowborder.h / .cpp            方案 A：效果实现
 src/main.cpp                         插件工厂（KWIN_EFFECT_FACTORY）
 src/windowborder.json                插件元数据（System Settings 里显示的名称等）
-tools/kwin-windowborder-setup.sh     启用/禁用/配置辅助脚本
+tools/kwin-windowborder-setup.sh     方案 A：启用/禁用/配置辅助脚本
+tools/windowborder-native.py         方案 B：按应用启用原生边框（无需编译）
 docs/example.png                     效果截图（所有窗口都画）
 docs/example-undecorated-only.png    效果截图（默认：只画无装饰窗口）
 ```
