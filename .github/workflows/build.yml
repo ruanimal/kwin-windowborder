@@ -20,7 +20,7 @@ jobs:
     name: .deb + .kwinscript
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: 安装工具
         run: |
@@ -86,7 +86,7 @@ jobs:
       - name: lintian
         run: lintian --fail-on error packaging/build/kwin-windowborder_*_all.deb
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: packages
           path: |
@@ -98,12 +98,14 @@ jobs:
     name: debian/ 打包也能过（dpkg-buildpackage）
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
+      # dpkg-checkbuilddeps 把 build-essential 当成隐式构建依赖，runner 镜像里没装
+      # （make-deb.sh 那条路不需要编译工具链，这也是它更省事的原因之一）
       - name: 安装 debhelper
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends debhelper lintian
+          sudo apt-get install -y --no-install-recommends debhelper lintian build-essential
 
       # make-deb.sh 和 debian/rules 铺的是同一份清单（packaging/install-layout.sh），
       # 这里再走一遍 debhelper，保证 PPA/OBS 那条路不会悄悄坏掉。
@@ -121,7 +123,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: packages
           path: dist
