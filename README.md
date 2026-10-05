@@ -10,8 +10,10 @@ Wayland 会话下，很多窗口完全没有（或几乎没有）可见的窗口
 这个插件是一个 **KWin 合成器效果（Effect）**，在合成场景之上给窗口画一圈可配置的彩色边框：
 
 - 默认**只给没有 KWin 装饰的窗口**画（也就是上面那类窗口），也可以配置成给所有窗口画；
-- 活动窗口可以用不同颜色、更粗的边框；
+- 默认**每个屏幕只给最前面的那个窗口**画（`TopmostPerScreen=true`）——这比"只给活动窗口画"稳定：鼠标移到另一块屏、或焦点变化都不会把边框带走。也可以用 `TopmostPerScreen=false` + `ActiveWindowOnly=true/false` 换成"只给活动窗口"或"所有窗口都画"；
+- 被画边框的那个窗口可以用不同颜色、更粗的边框；
 - 可选按应用派生不同颜色（提高多窗口辨识度）；
+- 用户拖动/缩放窗口期间，以及窗口被动画做了几何变换的那些帧，不画边框（边框只会跟不上窗口、拖出残影）；
 - **正确处理窗口遮挡**：边框被上层窗口盖住的部分不会被画出来（不会出现下层的边框糊在上层窗口上的问题）；
 - 支持 OpenGL 合成和 QPainter（软件）合成两种后端。
 
@@ -21,7 +23,7 @@ Wayland 会话下，很多窗口完全没有（或几乎没有）可见的窗口
 
 ![BorderOnDecoratedWindows=true 时所有窗口都画，绿色为后台窗口、红色为活动窗口](docs/example.png)
 
-上图是 `BorderOnDecoratedWindows=true` 时的效果：绿色 = 非活动窗口，红色 = 活动窗口，且下层窗口被上层窗口遮住的部分不会被画出来。
+上图是 `BorderOnDecoratedWindows=true` + `ActiveWindowOnly=false` 时的效果：绿色 = 非活动窗口，红色 = 活动窗口，且下层窗口被上层窗口遮住的部分不会被画出来。
 
 （截图来自嵌套 KWin 虚拟输出，用 zenity 作为 CSD 窗口、konsole 作为有装饰窗口测试。）
 
@@ -69,10 +71,11 @@ tools/kwin-windowborder-setup.sh disable
 tools/kwin-windowborder-setup.sh status
 ```
 
-等价的手工命令：
+等价的手工命令（注意：**已经在运行的实例不会因为覆盖 .so 而更新**，必须 `unloadEffect` 之后再 `loadEffect`，否则跑的还是旧代码）：
 
 ```bash
 kwriteconfig6 --file kwinrc --group Plugins --key windowborderEnabled true
+qdbus6 org.kde.KWin /Effects org.kde.kwin.Effects.unloadEffect windowborder
 qdbus6 org.kde.KWin /Effects org.kde.kwin.Effects.loadEffect windowborder
 ```
 
@@ -91,9 +94,11 @@ qdbus6 org.kde.KWin /Effects org.kde.kwin.Effects.loadEffect windowborder
 | `ActiveColor` | `#3daee9` | 活动窗口颜色（`#RRGGBB` 或 `#AARRGGBB`） |
 | `InactiveColor` | `#80000000` | 非活动窗口颜色；默认半透明黑，注意 `#80000000` 是 AARRGGBB（alpha=0x80） |
 | `BorderOnDecoratedWindows` | `false` | 是否也给「有 KWin 装饰」的窗口画边框（`false` = 只处理没有装饰的窗口） |
-| `ActiveWindowOnly` | `false` | 只给当前活动窗口画边框 |
+| `TopmostPerScreen` | `true` | 每个屏幕只给最前面（栈顶）的那个窗口画边框。它由窗口栈序决定，和"当前活动窗口"无关，所以鼠标在两块屏之间移动不会把边框带走 |
+| `ActiveWindowOnly` | `true` | 仅在 `TopmostPerScreen=false` 时生效：只给当前活动窗口画边框（`false` = 所有窗口都画） |
 | `ExcludeFullScreen` | `true` | 全屏窗口不画 |
 | `ExcludeMaximized` | `false` | 最大化窗口不画 |
+| `HideWhileMoving` | `true` | 用户拖动/缩放窗口期间不画边框（拖动时边框跟不上窗口，只会拖出一条条残影） |
 | `PerWindowColors` | `false` | 按应用名（windowClass）派生不同色相，非活动窗口各用一色 |
 
 示例：
@@ -104,6 +109,7 @@ tools/kwin-windowborder-setup.sh set ActiveColor '#00d1ff'
 tools/kwin-windowborder-setup.sh set InactiveColor '#60000000'
 tools/kwin-windowborder-setup.sh set BorderOnDecoratedWindows true
 tools/kwin-windowborder-setup.sh set PerWindowColors true
+tools/kwin-windowborder-setup.sh set HideWhileMoving false
 ```
 
 或者直接改 `kwinrc` 后执行：
@@ -122,8 +128,8 @@ sudo rm /usr/lib/x86_64-linux-gnu/qt6/plugins/kwin/effects/plugins/windowborder.
 ## 已知限制
 
 - 边框是**直角矩形**，不跟随窗口自身的圆角；带圆角的 CSD 窗口四角可能有一两个像素的方形痕迹。
-- 最小化/最大化等窗口动画播放期间，边框仍按窗口的最终几何绘制，会和动画中的画面短暂不同步。
-- Overview / Desktop Grid / Zoom 等全屏效果激活时，本效果自动停止绘制（否则位置会错）。
+- 用户拖动/缩放窗口期间不画边框（`HideWhileMoving`）；被动画/特效做了几何变换的窗口（最大化动画、wobbly windows 等）当帧也不画，因为这时窗口画在哪儿和 `frameGeometry()` 不一致，画出来只会错位。
+- Overview / Desktop Grid / Zoom 等全屏效果、以及整个屏幕被变换（桌面滑动切换等）的当帧，本效果自动停止绘制（否则位置会错）。
 - 遮挡是**按窗口矩形**近似计算的，不考虑不规则窗口形状和半透明区域（透明度 > 0.5 的上层窗口视为遮挡）。
 - 只对普通窗口（Normal / Dialog / Utility）生效；桌面、面板、菜单、通知、工具提示等不画。
 

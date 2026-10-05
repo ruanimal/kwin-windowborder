@@ -37,12 +37,22 @@ reload_effect() {
     qdbus6 org.kde.KWin /KWin reconfigure >/dev/null 2>&1 || true
 }
 
+# KWin keeps using the plugin file it loaded at load time, so a re-installed .so
+# is only picked up after an unload. Always unload first, otherwise "install a
+# new build" silently keeps running the old code.
+load_effect_fresh() {
+    if [ "$(kwin_dbus isEffectLoaded "${EFFECT_ID}" 2>/dev/null || true)" = "true" ]; then
+        kwin_dbus unloadEffect "${EFFECT_ID}" >/dev/null 2>&1 || true
+    fi
+    kwin_dbus loadEffect "${EFFECT_ID}"
+}
+
 case "${1:-}" in
 enable)
     need_tools
     kwriteconfig6 --file "${KWINRC}" --group Plugins --key "${EFFECT_ID}Enabled" true
-    if kwin_dbus loadEffect "${EFFECT_ID}" | grep -q true; then
-        echo "effect '${EFFECT_ID}' loaded"
+    if load_effect_fresh | grep -q true; then
+        echo "effect '${EFFECT_ID}' loaded (plugin file re-read)"
     else
         echo "could not load '${EFFECT_ID}' into the running KWin (installed? logged in again?)" >&2
         echo "it is enabled for the next session anyway" >&2
@@ -72,7 +82,7 @@ status)
     echo "kwinrc [Plugins] ${EFFECT_ID}Enabled : $(kreadconfig6 --file "${KWINRC}" --group Plugins --key "${EFFECT_ID}Enabled" --default '(unset)')"
     echo "kwinrc [${CONFIG_GROUP}]:"
     for key in Enabled BorderWidth ActiveBorderWidth BorderPlacement ActiveColor InactiveColor \
-        BorderOnDecoratedWindows ActiveWindowOnly ExcludeFullScreen ExcludeMaximized PerWindowColors; do
+        BorderOnDecoratedWindows TopmostPerScreen ActiveWindowOnly ExcludeFullScreen ExcludeMaximized HideWhileMoving PerWindowColors; do
         printf '  %-26s %s\n' "${key}" "$(kreadconfig6 --file "${KWINRC}" --group "${CONFIG_GROUP}" --key "${key}" --default '(default)')"
     done
     echo "runtime:"
@@ -84,7 +94,7 @@ status)
     cat >&2 <<EOF
 usage: $0 <command> [arguments]
 
-  enable                     enable the effect (now and for future sessions)
+  enable                     load the effect (unload+load, so a reinstalled .so is used)
   disable                    disable the effect
   status                     print the current configuration
   set KEY VALUE              write a configuration key and apply it
@@ -98,9 +108,11 @@ configuration keys (kwinrc group [${CONFIG_GROUP}]):
   ActiveColor                #RRGGBB or #AARRGGBB
   InactiveColor              #RRGGBB or #AARRGGBB
   BorderOnDecoratedWindows   true|false   also border windows that have a decoration
-  ActiveWindowOnly           true|false   only border the focused window
+  TopmostPerScreen           true|false   border only the frontmost window of each output (default true)
+  ActiveWindowOnly           true|false   with TopmostPerScreen=false: only border the focused window
   ExcludeFullScreen          true|false
   ExcludeMaximized           true|false
+  HideWhileMoving            true|false   don't draw while the user moves/resizes the window
   PerWindowColors            true|false   derive a distinct colour per application
 
 examples:

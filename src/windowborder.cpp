@@ -38,6 +38,37 @@ static QColor readColor(const KConfigGroup &config, const QString &key, const QC
     return color.isValid() ? color : fallback;
 }
 
+/**
+ * Converts a logical geometry into the coordinate space the scene renderer and
+ * RenderViewport::projectionMatrix() work in: global logical coordinates
+ * multiplied by the output scale, rounded to whole device pixels.
+ *
+ * This is deliberately *not* RenderViewport::mapToRenderTarget(): that one
+ * returns output local device coordinates (it subtracts the output's position in
+ * the virtual desktop) and is meant for placing output layers/planes, not for
+ * OpenGL vertices. Using it here shifted the border by the output's global
+ * origin, i.e. by 1920 px on a monitor that starts at x=1920.
+ */
+static Rect sceneDeviceRect(const RectF &logicalGeometry, qreal scale)
+{
+    return RectF(logicalGeometry.x() * scale,
+                 logicalGeometry.y() * scale,
+                 logicalGeometry.width() * scale,
+                 logicalGeometry.height() * scale)
+        .rounded();
+}
+
+/// Same as sceneDeviceRect(), for a whole region. Rounds inwards so that the
+/// result never leaves the region it was derived from.
+static Region sceneDeviceRegion(const Region &logicalRegion, qreal scale)
+{
+    Region ret;
+    for (const Rect &rect : logicalRegion.rects()) {
+        ret |= RectF(rect.x() * scale, rect.y() * scale, rect.width() * scale, rect.height() * scale).roundedIn();
+    }
+    return ret;
+}
+
 WindowBorderEffect::WindowBorderEffect()
 {
     reconfigure(ReconfigureAll);
@@ -57,13 +88,15 @@ WindowBorderEffect::WindowBorderEffect()
     connect(effects, &EffectsHandler::screenRemoved, this, [this]() {
         effects->addRepaintFull();
     });
+    // Which window is on top decides which one is bordered, so follow restacks.
+    connect(effects, &EffectsHandler::stackingOrderChanged, this, [this]() {
+        effects->addRepaintFull();
+    });
 
     const QList<EffectWindow *> windows = effects->stackingOrder();
     for (EffectWindow *window : windows) {
         slotWindowAdded(window);
     }
-
-    m_lastActiveWindow = effects->activeWindow();
 }
 
 WindowBorderEffect::~WindowBorderEffect() = default;
@@ -100,10 +133,17 @@ void WindowBorderEffect::reconfigure(ReconfigureFlags flags)
     m_activeColor = readColor(config, QStringLiteral("ActiveColor"), s_defaultActiveColor);
     m_inactiveColor = readColor(config, QStringLiteral("InactiveColor"), s_defaultInactiveColor);
     m_borderOnDecoratedWindows = config.readEntry(QStringLiteral("BorderOnDecoratedWindows"), false);
-    m_activeWindowOnly = config.readEntry(QStringLiteral("ActiveWindowOnly"), false);
+    // "TopmostPerScreen" is the modern name; ActiveWindowOnly is kept as a
+    // fallback for configurations written by older versions.
+    m_topmostPerScreen = config.readEntry(QStringLiteral("TopmostPerScreen"), config.readEntry(QStringLiteral("ActiveWindowOnly"), true));
+    m_activeWindowOnly = config.readEntry(QStringLiteral("ActiveWindowOnly"), true);
     m_excludeFullScreen = config.readEntry(QStringLiteral("ExcludeFullScreen"), true);
     m_excludeMaximized = config.readEntry(QStringLiteral("ExcludeMaximized"), false);
     m_perWindowColors = config.readEntry(QStringLiteral("PerWindowColors"), false);
+    m_hideWhileMoving = config.readEntry(QStringLiteral("HideWhileMoving"), true);
+    if (!m_hideWhileMoving) {
+        m_movingWindows.clear();
+    }
 
     effects->addRepaintFull();
 }
@@ -149,20 +189,46 @@ void WindowBorderEffect::slotWindowAdded(EffectWindow *window)
     connect(window, &EffectWindow::windowOpacityChanged, this, [this](EffectWindow *w, qreal, qreal) {
         repaintWindow(w);
     });
+    connect(window, &EffectWindow::windowStartUserMovedResized, this, &WindowBorderEffect::slotWindowMoveResizeStarted);
+    connect(window, &EffectWindow::windowFinishUserMovedResized, this, &WindowBorderEffect::slotWindowMoveResizeFinished);
 
     repaintWindow(window);
 }
 
 void WindowBorderEffect::slotWindowClosed(EffectWindow *window)
 {
+    m_movingWindows.remove(window);
+    repaintWindow(window);
+}
+
+void WindowBorderEffect::slotWindowMoveResizeStarted(EffectWindow *window)
+{
+    if (!window) {
+        return;
+    }
+    m_movingWindows.insert(window);
+    // Paint the border away: the window keeps moving, so it would only lag
+    // behind and leave copies of itself along the drag path.
+    repaintWindow(window);
+}
+
+void WindowBorderEffect::slotWindowMoveResizeFinished(EffectWindow *window)
+{
+    if (!window) {
+        return;
+    }
+    m_movingWindows.remove(window);
     repaintWindow(window);
 }
 
 void WindowBorderEffect::slotActiveWindowChanged(EffectWindow *window)
 {
-    repaintWindow(m_lastActiveWindow.data());
-    repaintWindow(window);
-    m_lastActiveWindow = window;
+    Q_UNUSED(window)
+
+    // The active window decides the colour (and, with TopmostPerScreen off,
+    // whether a window is bordered at all). Which window is active per output
+    // is not observable from here, so repaint everything.
+    effects->addRepaintFull();
 }
 
 void WindowBorderEffect::repaintWindow(EffectWindow *window)
@@ -182,9 +248,9 @@ void WindowBorderEffect::repaintFrame(const RectF &frame)
     effects->addRepaint(frame.adjusted(-padding, -padding, padding, padding));
 }
 
-int WindowBorderEffect::borderWidthFor(const EffectWindow *window) const
+int WindowBorderEffect::borderWidthFor(bool featured) const
 {
-    if (window && window == effects->activeWindow()) {
+    if (featured) {
         return m_activeBorderWidth > 0 ? m_activeBorderWidth : m_borderWidth;
     }
     return m_borderWidth;
@@ -199,9 +265,6 @@ bool WindowBorderEffect::hasBorder(const EffectWindow *window) const
         return false;
     }
     if (!window->isNormalWindow() && !window->isDialog() && !window->isUtility()) {
-        return false;
-    }
-    if (m_activeWindowOnly && window != effects->activeWindow()) {
         return false;
     }
     if (m_excludeFullScreen && window->isFullScreen()) {
@@ -219,9 +282,9 @@ bool WindowBorderEffect::hasBorder(const EffectWindow *window) const
     return true;
 }
 
-QColor WindowBorderEffect::borderColorFor(const EffectWindow *window) const
+QColor WindowBorderEffect::borderColorFor(const EffectWindow *window, bool featured) const
 {
-    if (window && window == effects->activeWindow()) {
+    if (featured) {
         return m_activeColor;
     }
     if (m_perWindowColors && window) {
@@ -234,16 +297,16 @@ QColor WindowBorderEffect::borderColorFor(const EffectWindow *window) const
     return m_inactiveColor;
 }
 
-Region WindowBorderEffect::borderRegionFor(const EffectWindow *window, const Region &covered, const Region &damage) const
+Region WindowBorderEffect::borderRegionFor(const EffectWindow *window, const Region &covered, const Region &damage, qreal scale, bool featured) const
 {
-    const Rect frame = window->frameGeometry().toAlignedRect();
+    const Rect frame = sceneDeviceRect(window->frameGeometry(), scale);
     if (frame.isEmpty()) {
         return Region();
     }
 
     // Never let the border eat more than half of the window.
     const int maximumWidth = qMax(0, (qMin(frame.width(), frame.height()) - 1) / 2);
-    const int width = qMin(borderWidthFor(window), maximumWidth);
+    const int width = qMin(qRound(borderWidthFor(featured) * scale), maximumWidth);
     if (width <= 0) {
         return Region();
     }
@@ -270,23 +333,41 @@ Region WindowBorderEffect::borderRegionFor(const EffectWindow *window, const Reg
     return region.intersected(damage);
 }
 
+void WindowBorderEffect::paintWindow(const RenderTarget &renderTarget, const RenderViewport &viewport, EffectWindow *window, int mask, const Region &deviceRegion, WindowPaintData &data)
+{
+    // A window that is painted with a transform (move/resize animation, wobbly
+    // windows, ...) is not where its frame geometry says it is, so its border
+    // would be drawn at the wrong place. Remember it and skip it below.
+    if (mask & PAINT_WINDOW_TRANSFORMED) {
+        m_transformedWindows.insert(window);
+    }
+    effects->paintWindow(renderTarget, viewport, window, mask, deviceRegion, data);
+}
+
 void WindowBorderEffect::paintScreen(const RenderTarget &renderTarget, const RenderViewport &viewport, int mask, const Region &deviceRegion, LogicalOutput *screen)
 {
+    m_transformedWindows.clear();
+
+    // The scene pass runs the other effects and calls paintWindow() for every
+    // window it paints, which is what fills m_transformedWindows.
     effects->paintScreen(renderTarget, viewport, mask, deviceRegion, screen);
 
-    // Overview, desktop grid, zoom and friends transform the scene; borders
-    // would be drawn at the wrong place, so stay out of their way.
-    if (!isActive() || effects->hasActiveFullScreenEffect()) {
+    // Overview, desktop grid, zoom, desktop switching slides and friends
+    // transform the whole scene; borders would be drawn at the wrong place, so
+    // stay out of their way.
+    if (!isActive() || effects->hasActiveFullScreenEffect() || (mask & PAINT_SCREEN_TRANSFORMED)) {
         return;
     }
 
-    const Region damage = viewport.mapFromDeviceCoordinatesContained(deviceRegion);
+    const qreal scale = viewport.scale();
+    const Region damage = sceneDeviceRegion(viewport.mapFromDeviceCoordinatesContained(deviceRegion), scale);
     if (damage.isEmpty()) {
         return;
     }
 
     QList<Border> borders;
     Region covered;
+    m_featuredOutputs.clear();
 
     const QList<EffectWindow *> windows = effects->stackingOrder();
     for (auto it = windows.crbegin(); it != windows.crend(); ++it) {
@@ -299,9 +380,35 @@ void WindowBorderEffect::paintScreen(const RenderTarget &renderTarget, const Ren
             continue;
         }
 
-        const Rect frame = window->frameGeometry().toAlignedRect();
+        const Rect frame = sceneDeviceRect(window->frameGeometry(), scale);
         if (frame.isEmpty()) {
             continue;
+        }
+
+        // Decide who gets the "featured" (active colour / width) border. This is
+        // deliberately done before the damage check below, so that the decision
+        // does not depend on which part of the screen happens to be repainted -
+        // otherwise the border would flicker while the pointer moves around.
+        bool eligible = hasBorder(window);
+        bool featured = window == effects->activeWindow();
+        if (m_topmostPerScreen) {
+            // Only the frontmost window of every output is bordered. Unlike the
+            // focused window this does not change when the pointer moves to
+            // another screen, so the border stays put.
+            featured = false;
+            if (eligible) {
+                LogicalOutput *output = window->screen();
+                if (output && m_featuredOutputs.contains(output)) {
+                    eligible = false;
+                } else {
+                    featured = true;
+                    if (output) {
+                        m_featuredOutputs.insert(output);
+                    }
+                }
+            }
+        } else if (m_activeWindowOnly && !featured) {
+            eligible = false;
         }
 
         const Region frameRegion(frame);
@@ -309,10 +416,12 @@ void WindowBorderEffect::paintScreen(const RenderTarget &renderTarget, const Ren
             continue;
         }
 
-        if (hasBorder(window)) {
-            const Region region = borderRegionFor(window, covered, damage);
+        const bool moving = m_movingWindows.contains(window);
+        const bool transformed = m_transformedWindows.contains(window);
+        if (eligible && !transformed && !(m_hideWhileMoving && moving)) {
+            const Region region = borderRegionFor(window, covered, damage, scale, featured);
             if (!region.isEmpty()) {
-                const QColor color = borderColorFor(window);
+                const QColor color = borderColorFor(window, featured);
                 bool merged = false;
                 for (Border &border : borders) {
                     if (border.color == color) {
@@ -345,11 +454,10 @@ void WindowBorderEffect::drawBorders(const RenderTarget &renderTarget, const Ren
     }
 
     if (effects->isOpenGLCompositing()) {
-        const Region deviceRegion = viewport.mapToRenderTarget(region);
-        if (deviceRegion.isEmpty()) {
-            return;
-        }
-
+        // `region` is already expressed in the scene renderer's coordinate space
+        // (global logical coordinates * output scale), which is what
+        // viewport.projectionMatrix() maps to the render target. Mapping it again
+        // with mapToRenderTarget() would offset it by the output's global origin.
         GLVertexBuffer *vbo = GLVertexBuffer::streamingBuffer();
         vbo->reset();
 
@@ -359,8 +467,8 @@ void WindowBorderEffect::drawBorders(const RenderTarget &renderTarget, const Ren
         binder.shader()->setUniform(GLShader::ColorUniform::Color, color);
 
         QList<QVector2D> vertices;
-        vertices.reserve(deviceRegion.rects().size() * 6);
-        for (const Rect &rect : deviceRegion.rects()) {
+        vertices.reserve(region.rects().size() * 6);
+        for (const Rect &rect : region.rects()) {
             const float left = rect.x();
             const float top = rect.y();
             const float right = rect.x() + rect.width();
@@ -379,11 +487,16 @@ void WindowBorderEffect::drawBorders(const RenderTarget &renderTarget, const Ren
         if (!painter) {
             return;
         }
+        // The QPainter scene renderer draws in global logical coordinates.
+        const qreal inverseScale = 1.0 / viewport.scale();
         painter->save();
         painter->setPen(Qt::NoPen);
         painter->setBrush(color);
         for (const Rect &rect : region.rects()) {
-            painter->drawRect(QRectF(rect.x(), rect.y(), rect.width(), rect.height()));
+            painter->drawRect(QRectF(rect.x() * inverseScale,
+                                     rect.y() * inverseScale,
+                                     rect.width() * inverseScale,
+                                     rect.height() * inverseScale));
         }
         painter->restore();
     }
