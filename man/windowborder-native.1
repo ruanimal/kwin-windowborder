@@ -1,0 +1,85 @@
+.TH WINDOWBORDER-NATIVE 1 "2026-10-05" "kwin-windowborder 1.0" "User Commands"
+.SH NAME
+windowborder-native \- give applications the native KWin/Breeze window border
+.SH SYNOPSIS
+.B windowborder-native
+.I command
+.RI [ arguments ]
+.SH DESCRIPTION
+Gives selected applications the window border that KWin draws itself, for
+windows that have no visible boundary of their own: Tauri/WebView and other
+applications that draw their title bar themselves, or that ask for
+\f(CWdecorations: false\fR.
+.PP
+Two native settings are written:
+.IP \(bu 2
+a window rule in \f(CW~/.config/kwinrulesrc\fR that forces "No titlebar and
+frame = false" (\f(CWnoborder=false\fR with \f(CWnoborderrule=2\fR). This makes
+KWin create a server-side decoration for the window;
+.IP \(bu 2
+a per-window override in \f(CW~/.config/breezerc\fR (\f(CW[Windeco Exception
+N]\fR) with \f(CWHideTitleBar=true\fR and \f(CWBorderSize=None\fR: no title bar
+is drawn, the border width stays zero so the window geometry does not change,
+and the 1px border outline remains as the visible border. The left, right and
+bottom edges stay usable for mouse resizing.
+.PP
+Both files are rewritten from one application list, and KWin is asked to
+re-read them afterwards. This command is also the backend of the KWin script
+extension and of \fBwindowborder-daemon\fR(1); the window menu and the settings
+panel call it rather than reimplementing it.
+.SH COMMANDS
+.TP
+.B add \fIapp\fR...
+Add the given window classes (the Wayland \f(CWapp_id\fR, i.e. what KWin
+matches as \f(CWresourceClass\fR) and apply immediately.
+.TP
+.B remove \fIapp\fR...
+Remove the given window classes and apply immediately.
+.TP
+.B set \fIkey value\fR
+Change an appearance setting:
+\f(CWBorderSize\fR (\f(CWNone\fR, \f(CWNoSides\fR, \f(CWTiny\fR,
+\f(CWNormal\fR, \f(CWLarge\fR, ...) or \f(CWHideTitleBar\fR
+(\f(CWtrue\fR/\f(CWfalse\fR). \f(CWBorderSize=None\fR is the default and the only
+one that leaves the window geometry untouched.
+.TP
+.B apply
+Regenerate the rules from the current configuration and apply them, without
+changing the configuration. Useful after editing
+\f(CW~/.config/windowborder-native.conf\fR by hand, or when the rules were lost
+(for example after a KWin upgrade).
+.TP
+.B status
+Print the configuration, the rules in \f(CWkwinrulesrc\fR and the per-window
+overrides in \f(CWbreezerc\fR.
+.TP
+.B reset
+Remove every rule and override this tool manages, and delete
+\f(CW~/.config/windowborder-native.conf\fR.
+.TP
+.B request \fIrequest\fR
+Internal entry point used by \fBwindowborder-daemon\fR(1):
+\f(CWadd:\fIapp\fR, \f(CWremove:\fIapp\fR, \f(CWpanel\fR, \f(CWreapply\fR,
+\f(CWlist\fR or \f(CWreset\fR.
+.SH FILES
+.TP
+.I ~/.config/windowborder-native.conf
+The application list and the appearance settings (the canonical state).
+.TP
+.I ~/.config/kwinrulesrc
+KWin window rules; one rule per application.
+.TP
+.I ~/.config/breezerc
+Breeze window-specific overrides; one \f(CW[Windeco Exception N]\fR group per
+application.
+.TP
+.I ~/.config/kwinrc
+The \f(CW[Script-windowborder-menu]\fR group mirrors the application list for
+the settings panel of the KWin script extension.
+.SH NOTES
+\f(CWdecorationPolicy\fR is one-way: adding the rule switches a window to
+server-side decoration, removing it does not switch it back, so a window only
+returns to its own decoration after the application is restarted.
+.SH SEE ALSO
+.BR windowborder-daemon (1),
+.BR kwin_wayland (1)

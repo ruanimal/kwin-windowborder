@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Window Border
+Name[zh_CN]=窗口边框后端
+Comment=D-Bus backend for the Window Border KWin script
+Comment[zh_CN]=「窗口边框」KWin 脚本的 D-Bus 后端（窗口菜单和设置面板靠它写配置）
+Exec=@EXEC@
+Icon=preferences-system-windows-script-test
+Terminal=false
+NoDisplay=true
+X-GNOME-Autostart-enabled=true
+X-KDE-autostart-after=plasma-shell

@@ -12,7 +12,7 @@
         "Version": "1.0",
         "License": "GPL-2.0-or-later",
         "Icon": "preferences-system-windows-script-test",
-        "EnabledByDefault": false,
+        "EnabledByDefault": true,
         "Authors": [
             {
                 "Name": "rlj"

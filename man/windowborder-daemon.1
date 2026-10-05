@@ -1,0 +1,72 @@
+.TH WINDOWBORDER-DAEMON 1 "2026-10-05" "kwin-windowborder 1.0" "User Commands"
+.SH NAME
+windowborder-daemon \- D-Bus backend for the Window Border KWin script extension
+.SH SYNOPSIS
+.B windowborder-daemon
+.RI [ options ]
+.SH DESCRIPTION
+Serves the \f(CWorg.kde.windowborder\fR name on the session bus and runs
+\fBwindowborder-native\fR(1) on request. The KWin script extension can only
+\f(CWreadConfig\fR and \f(CWcallDBus\fR \- it cannot write files or start
+processes \- while giving a window a border means writing
+\f(CWkwinrulesrc\fR and \f(CWbreezerc\fR. This daemon is that missing half:
+.IP \(bu 2
+a click in the window menu calls \f(CWAddApp\fR or \f(CWRemoveApp\fR;
+.IP \(bu 2
+the daemon polls \f(CW~/.config/kwinrc\fR every two seconds. Saving the
+settings panel of the extension only writes the application list there, and
+neither KWin nor the already running script reacts to that, so the daemon
+triggers the sync itself.
+.PP
+It is started on demand through D-Bus activation
+(\fI/usr/share/dbus-1/services/org.kde.windowborder.service\fR) and at login
+through \fI/etc/xdg/autostart/windowborder-daemon.desktop\fR. Running it by
+hand is only useful for debugging.
+.SH OPTIONS
+.TP
+.B --backend \fIpath\fR
+Path to \fBwindowborder-native\fR(1). By default it is looked up next to this
+script, then in \f(CW$PATH\fR.
+.TP
+.B --python \fIinterpreter\fR
+Interpreter used to run the backend (default: the one running the daemon).
+.TP
+.B --no-watch
+Do not poll \f(CWkwinrc\fR; only serve the D-Bus interface.
+.TP
+.B --verbose
+Log every request to standard error.
+.SH D-BUS INTERFACE
+.TP
+.B Name
+\f(CWorg.kde.windowborder\fR
+.TP
+.B Object path
+\f(CW/WindowBorder\fR
+.TP
+.B Interface
+\f(CWorg.kde.windowborder\fR
+.SH METHODS
+.TP
+.B AddApp(s app) -> b
+Add an application to the list and apply.
+.TP
+.B RemoveApp(s app) -> b
+Remove an application from the list and apply.
+.TP
+.B Sync() -> b
+Apply the application list as it currently is in \f(CWkwinrc\fR.
+.TP
+.B Reapply() -> b
+Regenerate the rules from the current list and apply them.
+.TP
+.B GetApps() -> as
+The current application list.
+.TP
+.B Version() -> s
+Daemon version.
+.TP
+.B Quit() -> b
+Stop the daemon.
+.SH SEE ALSO
+.BR windowborder-native (1)

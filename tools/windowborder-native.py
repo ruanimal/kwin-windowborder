@@ -550,45 +550,30 @@ def cmd_apply(args) -> int:
 
 
 # --------------------------------------------------------------------------
-# 扩展后端：KWin 脚本（窗口菜单 / 设置面板）通过 systemd 用户单元发来的请求
+# 请求入口：供 tools/windowborder-daemon.py（D-Bus 服务）和命令行使用
 #
-#   菜单点「加边框：dbx」→ callDBus StartUnit windowborder@add:dbx.service
-#   设置面板改完          → systemd path 单元盯 kwinrc → windowborder@panel.service
+#   窗口菜单点击 → windowborder-daemon 的 AddApp/RemoveApp → request add:<应用>
+#   设置面板保存 → 守护进程发现 kwinrc 变了 → request panel
+#   D-Bus 直接调（调试）→ request add:<应用> / remove:<应用> / panel / reapply / list
 #
-# 单元实例名只允许 [A-Za-z0-9:_.\-]，应用 id 里其它字符由 JS 侧编码成 _hh / _uhhhh。
+# 应用名由命令行原样传入；D-Bus 那边是普通字符串参数，不再需要编码。
 # --------------------------------------------------------------------------
-
-def decode_token(token: str) -> str:
-    out: list[str] = []
-    i = 0
-    while i < len(token):
-        ch = token[i]
-        if ch == "_" and i + 3 <= len(token):
-            try:
-                if token[i + 1] == "u" and i + 6 <= len(token):
-                    out.append(chr(int(token[i + 2:i + 6], 16)))
-                    i += 6
-                    continue
-                out.append(chr(int(token[i + 1:i + 3], 16)))
-                i += 3
-                continue
-            except ValueError:
-                pass
-        out.append(ch)
-        i += 1
-    return "".join(out)
-
 
 def cmd_request(args) -> int:
     action, _, token = args.request.partition(":")
 
     with apply_lock():
         if action == "reset":
-            # 让 cmd_reset 复用同一把锁（flock 可重入？不行 —— 直接内联）
             return reset_locked()
 
         apps, opts = read_our_config()
         managed = read_managed()
+
+        if action == "list":
+            # 给 windowborder-daemon 的 GetApps() 用：一行一个
+            for app in apps:
+                print(app)
+            return 0
 
         if action in ("panel", "sync"):
             wanted = panel_changed_list()
@@ -597,20 +582,24 @@ def cmd_request(args) -> int:
                 return 0
             apps = wanted
         elif action == "add":
-            app = decode_token(token)
+            app = token
             if not app:
                 print("add 请求缺少应用名", file=sys.stderr)
                 return 1
             if app not in apps:
                 apps.append(app)
         elif action == "remove":
-            app = decode_token(token)
+            app = token
             if not app:
                 print("remove 请求缺少应用名", file=sys.stderr)
                 return 1
             if app in apps:
                 apps.remove(app)
         elif action == "reapply":
+            # 先看看设置面板有没有改过名单：不然会把面板里新写的名单用旧配置覆盖掉
+            wanted = panel_changed_list()
+            if wanted is not None:
+                apps = wanted
             apply_all(apps, opts, managed, force=True)
             print(f"已重新应用: {', '.join(apps) or '（无）'}")
             return 0

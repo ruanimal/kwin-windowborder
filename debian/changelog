@@ -1,0 +1,7 @@
+kwin-windowborder (1.0) unstable; urgency=medium
+
+  * Initial release: window menu entry and settings panel that give an
+    application the native KWin/Breeze window border, plus the D-Bus
+    backend that writes kwinrulesrc and breezerc.
+
+ -- ruan.lj <ruan.lj@foxmail.com>  Mon, 05 Oct 2026 17:30:00 +0800

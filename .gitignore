@@ -1,2 +1,11 @@
 build*/
 __pycache__/
+packaging/build/
+*.deb
+*.kwinscript
+debian/.debhelper/
+debian/debhelper-build-stamp
+debian/files
+debian/kwin-windowborder/
+debian/*.debhelper.log
+debian/*.substvars

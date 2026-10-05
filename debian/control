@@ -1,0 +1,23 @@
+Source: kwin-windowborder
+Section: kde
+Priority: optional
+Maintainer: ruan.lj <ruan.lj@foxmail.com>
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.6.2
+Rules-Requires-Root: no
+Homepage: https://example.invalid/kwin-windowborder
+
+Package: kwin-windowborder
+Architecture: all
+Depends: python3, python3-dbus, python3-gi, kwin-wayland | kwin-x11, ${misc:Depends}
+Description: Native window border for applications without window decoration
+ Adds a "Window Border" submenu to the KWin window menu (Alt+F3 or
+ right-click on the titlebar) and a settings panel that give an
+ application the native KWin/Breeze window border: a 1px outline without
+ a title bar and without changing the window geometry.
+ .
+ Tauri/WebView and GTK/libadwaita windows draw their own title bar (or
+ none at all), so KWin sees a plain rectangle with no visible boundary.
+ The border is created by KWin itself (a window rule plus a Breeze
+ per-window override), so drag, animations, occlusion, rounded corners
+ and output scaling are handled by KWin.

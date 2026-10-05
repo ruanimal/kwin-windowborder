@@ -1,0 +1,19 @@
+#!/usr/bin/make -f
+#
+# SPDX-License-Identifier: GPL-2.0-or-later
+#
+# 进 PPA / OBS 用的 debhelper 入口。文件清单在 packaging/install-layout.sh 里，
+# 和 packaging/make-deb.sh（不依赖 debhelper 的那条路）共用同一份。
+
+%:
+	dh $@
+
+# 纯文本 + 纯 Python，没有需要编译的东西
+override_dh_auto_build:
+	:
+
+override_dh_auto_test:
+	:
+
+override_dh_auto_install:
+	packaging/install-layout.sh debian/kwin-windowborder

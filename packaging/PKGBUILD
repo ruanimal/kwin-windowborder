@@ -1,0 +1,55 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+#
+# Arch / AUR 用的 PKGBUILD 骨架。仓库还没发布地址，source 那行按实际填。
+#
+#   makepkg -si
+#
+# 依赖里 python-dbus / python-gobject 就是 Debian 的 python3-dbus / python3-gi。
+# 装完注销重登一次即可（KWin 加载扩展 + 自启动拉起 D-Bus 服务）。
+
+pkgname=kwin-windowborder
+pkgver=1.0
+pkgrel=1
+pkgdesc="Window menu entry and settings panel that give an application the native KWin/Breeze window border"
+arch=('any')
+url="https://example.invalid/kwin-windowborder"
+license=('GPL-2.0-or-later')
+depends=('kwin' 'python' 'python-dbus' 'python-gobject')
+options=('!strip')
+source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/${pkgver}.tar.gz")
+sha256sums=('SKIP')
+
+package() {
+    cd "${srcdir}/${pkgname}-${pkgver}"
+
+    install -Dm755 tools/windowborder-native.py "${pkgdir}/usr/bin/windowborder-native"
+    install -Dm755 tools/windowborder-daemon.py "${pkgdir}/usr/bin/windowborder-daemon"
+
+    install -d "${pkgdir}/usr/share/kwin/scripts/windowborder-menu"
+    cp -a extension/. "${pkgdir}/usr/share/kwin/scripts/windowborder-menu/"
+
+    install -d "${pkgdir}/usr/share/dbus-1/services"
+    sed 's|@EXEC@|/usr/bin/python3 /usr/bin/windowborder-daemon|g' \
+        packaging/files/org.kde.windowborder.service.in \
+        > "${pkgdir}/usr/share/dbus-1/services/org.kde.windowborder.service"
+
+    install -Dm644 /dev/stdin "${pkgdir}/etc/xdg/autostart/windowborder-daemon.desktop" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Window Border
+Name[zh_CN]=窗口边框后端
+Comment=D-Bus backend for the Window Border KWin script
+Comment[zh_CN]=「窗口边框」KWin 脚本的 D-Bus 后端（窗口菜单和设置面板靠它写配置）
+Exec=/usr/bin/python3 /usr/bin/windowborder-daemon
+Icon=preferences-system-windows-script-test
+Terminal=false
+NoDisplay=true
+X-GNOME-Autostart-enabled=true
+X-KDE-autostart-after=plasma-shell
+EOF
+
+    install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE" 2>/dev/null || true
+}
+
+# 说明：这里没有用 packaging/install-layout.sh，因为 PKGBUILD 里展开 ${pkgdir}
+# 更直观；清单和它保持一致（改一处记得改另一处，或者直接调用那个脚本）。
