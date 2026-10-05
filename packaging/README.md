@@ -54,17 +54,26 @@ KWin）。重登之后一切自动。
   Arch 用户走 AUR（`PKGBUILD` 里的 `source` 换成真实地址）。
 - **源码**：`git clone && tools/kwin-windowborder-menu-setup.sh install`（用户级，不需要 root）。
 
-## CI 骨架
+## CI
 
-一个 job 就够，产物两个：
+`.github/workflows/build.yml` 已经在仓库里，三个 job：
 
-```yaml
-script:
-  - packaging/pack.sh              # → .kwinscript（发 Store）
-  - packaging/make-deb.sh          # → .deb（发用户）
-  - lintian packaging/build/kwin-windowborder_*_all.deb
-artifacts:
-  paths: [packaging/build/]
+| job | 做什么 |
+| --- | --- |
+| `packages` | 语法检查（py_compile / bash -n / node --check / XML+JSON）→ `make-deb.sh` + `pack.sh` → `lintian --fail-on error` → 传 artifact |
+| `debian-dir` | 装 debhelper 跑一遍 `dpkg-buildpackage -b -uc -us` + lintian，保证 PPA/OBS 那条路不会悄悄坏掉（和 `packages` 铺的是同一份清单） |
+| `release` | 只在推 `v*` tag 时跑：下载 artifact，用 `gh release create` 建 Release 并挂上 `.deb` + `.kwinscript` |
+
+推 tag 时 workflow 会先用 tag 号改写 `extension/metadata.json` 和 `debian/changelog`
+（`v1.1.0-rc1` → `1.1.0~rc1`，native 包的版本里不能有 `-`），所以发出来的包版本和
+tag 一致。平时推 master / PR 只构建不发布；两边版本不一致时给一条 warning。
+
+本地等价命令（和 CI 里的一模一样）：
+
+```bash
+python3 -m py_compile tools/*.py && node --check extension/contents/code/main.js
+packaging/make-deb.sh && packaging/pack.sh
+lintian --fail-on error packaging/build/kwin-windowborder_*_all.deb
 ```
 
 ## 已知的坑

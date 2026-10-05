@@ -1,0 +1,136 @@
+name: build
+
+# 推 tag（v*）→ 构建 + 建 Release 挂上产物；推 master / PR → 只构建。
+on:
+  push:
+    branches: [master, main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  packages:
+    name: .deb + .kwinscript
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装工具
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends lintian
+
+      - name: 语法检查
+        run: |
+          python3 -m py_compile tools/windowborder-native.py tools/windowborder-daemon.py
+          bash -n tools/kwin-windowborder-menu-setup.sh
+          bash -n packaging/install-layout.sh packaging/make-deb.sh packaging/pack.sh
+          for script in tools/kwin-windowborder-menu-setup.sh packaging/*.sh; do
+            command -v shellcheck >/dev/null && shellcheck -S error "${script}" || true
+          done
+          python3 - <<'PY'
+          import json, pathlib, xml.etree.ElementTree as ET
+
+          meta = json.loads(pathlib.Path("extension/metadata.json").read_text(encoding="utf-8"))
+          ET.parse("extension/contents/config/main.xml")
+          ET.parse("extension/contents/ui/config.ui")
+
+          # 版本必须以 extension/metadata.json 为准，debian/changelog 只是给 dpkg 看的；
+          # 两边不一致时只提醒（发布打 tag 时 workflow 会自动对齐）。
+          import re
+          changelog = pathlib.Path("debian/changelog").read_text(encoding="utf-8")
+          match = re.match(r"kwin-windowborder \(([^)]*)\)", changelog)
+          if not match or match.group(1) != meta["KPlugin"]["Version"]:
+              print(f"::warning::debian/changelog 的版本 {match and match.group(1)!r} "
+                    f"与 metadata.json 的 {meta['KPlugin']['Version']!r} 不一致")
+          print("metadata.json / main.xml / config.ui OK")
+          PY
+          # 扩展脚本的语法（node 只是拿来做纯 JS 语法检查，QJSEngine 的方言够用）
+          node --check extension/contents/code/main.js
+
+      - name: 对齐 tag 版本
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          # native 包的版本里不能有 '-'（那是 Debian revision 分隔符），换成 '~'
+          version="${GITHUB_REF_NAME#v}"
+          version="${version//-/\~}"
+          echo "版本: ${version}"
+          python3 - "${version}" <<'PY'
+          import json, pathlib, re, sys
+
+          version = sys.argv[1]
+          meta = pathlib.Path("extension/metadata.json")
+          data = json.loads(meta.read_text(encoding="utf-8"))
+          data["KPlugin"]["Version"] = version
+          meta.write_text(json.dumps(data, indent=4, ensure_ascii=False) + "\n", encoding="utf-8")
+
+          changelog = pathlib.Path("debian/changelog")
+          changelog.write_text(
+              re.sub(r"^kwin-windowborder \([^)]*\)", f"kwin-windowborder ({version})",
+                     changelog.read_text(encoding="utf-8"), count=1, flags=re.M),
+              encoding="utf-8")
+          PY
+
+      - name: 构建
+        run: |
+          packaging/make-deb.sh
+          packaging/pack.sh
+
+      - name: lintian
+        run: lintian --fail-on error packaging/build/kwin-windowborder_*_all.deb
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages
+          path: |
+            packaging/build/*.deb
+            packaging/build/*.kwinscript
+          if-no-files-found: error
+
+  debian-dir:
+    name: debian/ 打包也能过（dpkg-buildpackage）
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 debhelper
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends debhelper lintian
+
+      # make-deb.sh 和 debian/rules 铺的是同一份清单（packaging/install-layout.sh），
+      # 这里再走一遍 debhelper，保证 PPA/OBS 那条路不会悄悄坏掉。
+      - name: dpkg-buildpackage
+        run: dpkg-buildpackage -b -uc -us
+
+      - name: lintian
+        run: lintian --fail-on error ../kwin-windowborder_*_all.deb
+
+  release:
+    name: 建 Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [packages, debian-dir]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: packages
+          path: dist
+
+      - name: gh release create
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes \
+            dist/*.deb dist/*.kwinscript
