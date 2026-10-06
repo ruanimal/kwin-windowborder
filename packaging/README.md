@@ -27,8 +27,11 @@
 /usr/share/doc/kwin-windowborder/{copyright,changelog.gz}
 ```
 
-依赖：`python3`、`python3-dbus`、`python3-gi`、`kwin-wayland | kwin-x11`。
-全是文本 + 纯 Python，所以 `Architecture: all`，一个包能给同级 Ubuntu/neon 用。
+依赖：`python3`、`python3-dbus`、`python3-gi`、`kwin-wayland (>= 4:6.6) | kwin-x11 (>= 4:6.6)`
+（Arch 对应 `kwin>=6.6`）。KWin 的下限不是随手写的：强制服务端装饰的规则语义
+（`noborder=false` → `DecorationPolicy::Server`）是 Plasma 6.6 才有的，更早的版本会收下
+规则但不生效 —— 所以让包管理器直接挡住，而不是装完发现没反应。细节见根目录 README 的
+「版本要求」。全是文本 + 纯 Python，所以 `Architecture: all`，一个包能给同级 Ubuntu/neon 用。
 
 扩展的 `metadata.json` 里 `EnabledByDefault: true`：系统装的 KPackage 装完即启用，
 不用写用户的 `kwinrc`；D-Bus 激活和 `/etc/xdg/autostart` 都是"放着就生效"，

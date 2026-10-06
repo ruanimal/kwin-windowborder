@@ -5,6 +5,8 @@
 #   makepkg -si
 #
 # 依赖里 python-dbus / python-gobject 就是 Debian 的 python3-dbus / python3-gi。
+# kwin>=6.6 是硬下限：强制服务端装饰的规则语义（noborder=false →
+# DecorationPolicy::Server）是 Plasma 6.6 才有的，更早的 KWin 会接受规则但不生效。
 # 装完注销重登一次即可（KWin 加载扩展 + 自启动拉起 D-Bus 服务）。
 
 pkgname=kwin-windowborder
@@ -14,7 +16,7 @@ pkgdesc="Window menu entry and settings panel that give an application the nativ
 arch=('any')
 url="https://github.com/ruanimal/kwin-windowborder"
 license=('GPL-2.0-or-later')
-depends=('kwin' 'python' 'python-dbus' 'python-gobject')
+depends=('kwin>=6.6' 'python' 'python-dbus' 'python-gobject')
 options=('!strip')
 source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/refs/tags/v${pkgver}.tar.gz")
 sha256sums=('SKIP')

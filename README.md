@@ -26,7 +26,7 @@ Wayland 会话下，很多窗口完全没有可见的窗口边界：
 两条和版本绑定的行为（细则分别在「原理」和「已知限制」里）：
 
 - **顶边缩放要 Plasma ≥ 6.8**：Breeze 6.7 及更早把 `setResizeOnlyBorders()` 的顶边写死成 0，上游已经修了（[breeze@6177e54b](https://invent.kde.org/plasma/breeze/-/commit/6177e54b4b1ef02bf0882be3b7dca1fadbe4f196)，bug [504225](https://bugs.kde.org/show_bug.cgi?id=504225)，FIXED-IN 6.8.0），本工具不需要为此改任何东西；6.7 及更早的兜底见「已知限制」。
-- **Plasma ≥ 6.8 会改写规则键**：6.8 用三态 `decorationpolicy` 取代了 `noborder`（[kwin@065adbd3](https://invent.kde.org/plasma/kwin/-/commit/065adbd3)），旧键由 KWin 自己迁移，我们照旧写旧键即可 —— 细节见「原理」。
+- **Plasma ≥ 6.8 会改写规则键**：6.8 用三态 `decorationpolicy` 取代了 `noborder`（[kwin@065adbd3](https://invent.kde.org/plasma/kwin/-/commit/065adbd3)），旧键由 KWin 自己迁移。后端照旧写旧键、并且两种键形态都认，所以迁移既不影响功能，也不会引起规则重建 —— 细节见「原理」。
 
 ## 安装
 
@@ -39,7 +39,7 @@ packaging/make-deb.sh                                  # → packaging/build/kwi
 sudo apt install ./kwin-windowborder_1.0_all.deb        # 或者 Discover 里双击
 ```
 
-装完**注销重登一次**（让 KWin 加载脚本、并让 D-Bus 服务自启动），之后就完事了 —— 不需要配置、不需要启用命令。包是 `Architecture: all`（纯文本 + 纯 Python），依赖只有 `python3-dbus`、`python3-gi` 和 `kwin-wayland`。
+装完**注销重登一次**（让 KWin 加载脚本、并让 D-Bus 服务自启动），之后就完事了 —— 不需要配置、不需要启用命令。包是 `Architecture: all`（纯文本 + 纯 Python），依赖只有 `python3-dbus`、`python3-gi` 和 `kwin-wayland (>= 4:6.6)`（下限的原因见上面「版本要求」；更早的 Plasma 会被 apt 直接挡住，而不是装完没反应）。
 
 打包细节（deb / PKGBUILD / KDE Store）见 [packaging/README.md](packaging/README.md)。
 
@@ -104,7 +104,7 @@ windowborder-native reset                   # 清掉本工具的全部配置
 
    于是该窗口的 `decorationPolicy` 变成 `Server`，KWin 为它创建服务端装饰，并通过 `xdg-decoration` 发 `configure(server_side)` 通知客户端。这条路径从 Plasma 6.6 起存在（见「版本要求」）。
 
-   **Plasma 6.8 起**这套键换成了三态 `decorationpolicy`（`none` / `client-preference` / `server` / `shadow`）。KWin 读 `kwinrulesrc` 时会把我们写的 `noborder=false` + `noborderrule=2` **就地迁移**成 `decorationpolicy=server` + `decorationpolicyrule=2`，并把旧的 `noborder*` 键删掉（`src/rulebooksettings.cpp`，注释写明 Plasma 7 之前保留这条迁移路径），所以功能不受影响、本工具也不用改。唯一的小后果：迁移后的规则内容和我们写的那份不同，`windowborder-native apply` 会因此把规则重建一次（规则 id 会换），下一次被 KWin 迁移回去 —— 只是键名来回，行为不变。
+   **Plasma 6.8 起**这套键换成了三态 `decorationpolicy`（`none` / `client-preference` / `server` / `shadow`）。KWin 读 `kwinrulesrc` 时会把我们写的 `noborder=false` + `noborderrule=2` **就地迁移**成 `decorationpolicy=server` + `decorationpolicyrule=2`，并把旧的 `noborder*` 键删掉（`src/rulebooksettings.cpp`，注释写明 Plasma 7 之前保留这条迁移路径）。所以本工具照旧写旧键就行：6.6/6.7 直接认，6.8+ 由 KWin 迁移。判断「规则是否已生效」时两种键形态都算数（后端里的 `FORCE_RULE_KEYS`），否则 KWin 迁移过一次之后，每次 `apply` 都会以为规则丢了而把规则重建一遍。
 
 2. **Breeze 窗口特定覆盖**（`~/.config/breezerc`，组 `[Windeco Exception N]`）：按窗口类匹配，设 `HideTitleBar=true`、`BorderSize=None`、`Mask=16`。于是：
 

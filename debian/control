@@ -9,7 +9,7 @@ Homepage: https://github.com/ruanimal/kwin-windowborder
 
 Package: kwin-windowborder
 Architecture: all
-Depends: python3, python3-dbus, python3-gi, kwin-wayland | kwin-x11, ${misc:Depends}
+Depends: python3, python3-dbus, python3-gi, kwin-wayland (>= 4:6.6) | kwin-x11 (>= 4:6.6), ${misc:Depends}
 Description: Native window border for applications without window decoration
  Adds a "Window Border" submenu to the KWin window menu (Alt+F3 or
  right-click on the titlebar) and a settings panel that give an
@@ -21,3 +21,8 @@ Description: Native window border for applications without window decoration
  The border is created by KWin itself (a window rule plus a Breeze
  per-window override), so drag, animations, occlusion, rounded corners
  and output scaling are handled by KWin.
+ .
+ KWin >= 6.6 is required: forcing a server side decoration through a
+ window rule (noborder=false -> DecorationPolicy::Server) only exists
+ since then. On older Plasma the rule is accepted but ignored, so the
+ package refuses to install instead of silently doing nothing.

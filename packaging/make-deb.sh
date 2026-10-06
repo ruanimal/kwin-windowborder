@@ -33,12 +33,15 @@ mkdir -p "${ROOT}/DEBIAN"
 
 "${REPO_DIR}/packaging/install-layout.sh" "${ROOT}"
 
+# 依赖里的 KWin 版本下限和 debian/control 保持一致：强制服务端装饰的规则语义
+# （noborder=false → DecorationPolicy::Server）是 Plasma 6.6 才有的，更早的版本
+# 装了也不会生效，所以让 apt 直接挡住。
 cat > "${ROOT}/DEBIAN/control" <<EOF
 Package: ${PKG}
 Version: ${VERSION}
 Architecture: all
 Maintainer: ruan.lj <ruan.lj@foxmail.com>
-Depends: python3, python3-dbus, python3-gi, kwin-wayland | kwin-x11
+Depends: python3, python3-dbus, python3-gi, kwin-wayland (>= 4:6.6) | kwin-x11 (>= 4:6.6)
 Section: kde
 Priority: optional
 Description: Native window border for applications without window decoration
@@ -52,6 +55,11 @@ Description: Native window border for applications without window decoration
  The border is created by KWin itself (window rule + Breeze per-window
  override), so drag, animations, occlusion, rounded corners and output
  scaling are handled by KWin.
+ .
+ KWin >= 6.6 is required: forcing a server side decoration through a
+ window rule (noborder=false -> DecorationPolicy::Server) only exists
+ since then. On older Plasma the rule is accepted but ignored, so the
+ package refuses to install instead of silently doing nothing.
 EOF
 
 cat > "${ROOT}/DEBIAN/postinst" <<'EOF'

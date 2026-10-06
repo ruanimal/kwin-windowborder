@@ -327,15 +327,39 @@ def strip_our_rules(groups: list[Group]) -> list[str]:
     return removed
 
 
-def expected_rule(app: str) -> dict[str, str]:
+# 规则里「强制服务端装饰」的那对键，Plasma 6.8 前后名字不同：
+#   ≤ 6.7：noborder=false（无标题栏和边框 = 否）+ noborderrule=2（Rules::Force）
+#   ≥ 6.8：decorationpolicy=server + decorationpolicyrule=2（三态 decorationpolicy）
+# 6.8 的 KWin 读 kwinrulesrc 时会就地把旧键迁移成新键（src/rulebooksettings.cpp，
+# 注释写明 Plasma 7 之前保留这条迁移路径），所以照旧写旧键就行（6.6/6.7 直接认）。
+# 但判断「规则是否已经生效」时两种形态都要认：KWin 迁移过一次之后，旧键就没了，
+# 只认旧键的话每次 apply 都会以为规则丢了、把规则重建一遍（功能不变，但白白 churn）。
+FORCE_RULE_KEYS = (
+    {"noborder": "false", "noborderrule": "2"},
+    {"decorationpolicy": "server", "decorationpolicyrule": "2"},
+)
+
+
+def rule_identity(app: str) -> dict[str, str]:
+    """规则里和 Plasma 版本无关的部分：匹配哪个窗口、什么类型的窗口。"""
     return {
         "Description": f"{RULE_PREFIX}{app}",
         "types": "1",  # Normal window
         "wmclass": app,
         "wmclassmatch": "1",  # 精确匹配
-        "noborder": "false",
-        "noborderrule": "2",  # Force
     }
+
+
+def expected_rule(app: str) -> dict[str, str]:
+    """我们要写进 kwinrulesrc 的规则（用旧键，见 FORCE_RULE_KEYS 的说明）。"""
+    return {**rule_identity(app), **FORCE_RULE_KEYS[0]}
+
+
+def rule_matches(rule: Group, app: str) -> bool:
+    """现有规则和我们要写的那条是否等价 —— 6.8 迁移后的新键形态也算。"""
+    if any(rule.get(key) != value for key, value in rule_identity(app).items()):
+        return False
+    return any(all(rule.get(key) == value for key, value in keys.items()) for keys in FORCE_RULE_KEYS)
 
 
 def rules_up_to_date(apps: list[str]) -> bool:
@@ -347,9 +371,7 @@ def rules_up_to_date(apps: list[str]) -> bool:
     by_app = {g.get("Description", "")[len(RULE_PREFIX):]: g for g in ours}
     for app in set(apps):
         rule = by_app.get(app)
-        if rule is None:
-            return False
-        if any(rule.get(key) != value for key, value in expected_rule(app).items()):
+        if rule is None or not rule_matches(rule, app):
             return False
     return True
 
