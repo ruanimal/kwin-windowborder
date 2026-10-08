@@ -1,223 +1,226 @@
-# Window Border — 给没有窗口装饰的窗口加原生边框
+**English** | [简体中文](README.zh-CN.md)
 
-Wayland 会话下，很多窗口完全没有可见的窗口边界：
+# Window Border — native borders for undecorated windows
 
-- **Tauri / WebView 应用**（`decorations: false`）自己画标题栏，KWin 这边既没有标题栏、也没有边框；
-- **GTK / libadwaita** 应用自己画 CSD；
-- 对 KWin 来说它们就是一块光秃秃的矩形，和桌面背景、以及多个窗口之间都难以分辨（深色壁纸或透明终端上尤其明显）。
+In a Wayland session, many windows have no visible window edge at all:
 
-这个项目给这类应用加**一圈原生边框**：用 KWin 的窗口规则强制出服务端装饰，再用 Breeze 的「窗口特定覆盖」把标题栏藏掉、边框设为 0，只留那条 1px 的 outline。边框是 KWin 自己画的，所以拖拽、动画、遮挡、圆角、多屏缩放全都不用操心，鼠标还能拖窗口边缘缩放窗口（顶边要 Plasma ≥ 6.8，见下面「版本要求」）。
+- **Tauri / WebView apps** (`decorations: false`) draw their own title bar — on the KWin side there is neither a title bar nor a border;
+- **GTK / libadwaita apps** draw their own CSD;
+- to KWin they are just bare rectangles, hard to tell apart from the desktop background and from each other (most obvious on dark wallpapers or over a transparent terminal).
 
-三个入口，都立即生效：
+This project gives such apps **a single native border**: it uses a KWin window rule to force server-side decorations, then a Breeze "window-specific override" to hide the title bar and set the border size to 0, leaving only that 1px outline. The border is drawn by KWin itself, so dragging, animations, occlusion, rounded corners and multi-monitor scaling all come for free, and you can still resize a window by dragging its edge with the mouse (the top edge needs Plasma ≥ 6.8, see "Requirements" below).
 
-- **窗口菜单**（`Alt+F3` 或标题栏右键 →「扩展」→「窗口边框」）：给当前窗口的应用加/去边框；
-- **设置面板**（系统设置 → 窗口管理 → KWin 脚本 → Window Border → 配置）：维护「启用的应用」名单；
-- **命令行** `windowborder-native`：和上面两个入口共用同一份实现。
+Three entry points, all taking effect immediately:
 
-## 版本要求
+- **Window menu** (`Alt+F3` or right-click a title bar → "More Actions" → "Window Border"): add or remove the border for the current window's app;
+- **Settings panel** (System Settings → Window Management → KWin Scripts → Window Border → Configure): maintain the list of enabled apps;
+- **Command line** `windowborder-native`: shares one and the same implementation with the two entries above.
 
-| 项目 | 要求 | 原因 |
+## Requirements
+
+| Item | Requirement | Why |
 | --- | --- | --- |
-| **Plasma / KWin** | **≥ 6.6**（开发环境：KDE neon / Plasma 6.7.5） | 「用窗口规则强制服务端装饰」这条路是 6.6 才有的：[kwin@bcdceae2](https://invent.kde.org/plasma/kwin/-/commit/bcdceae2) 把重载的 `noborder` 布尔换成了 `DecorationPolicy`，`WindowRules::checkDecorationPolicy()` 里 `noborder=false`（强制）→ `DecorationPolicy::Server`。6.5 及更早的 `XdgToplevelWindow::preferredDecorationMode()` 只会在 `noborder=true` 时返回 `None`，根本没有「强制 Server」这一档，所以对自绘 CSD / 完全不要装饰的客户端（GTK、Tauri `decorations:false`）不生效。 |
-| **装饰插件** | 只能是 **Breeze**（`org.kde.breeze`） | 本工具靠 Breeze 的「窗口特定覆盖」（`breezerc` 里的 `[Windeco Exception N]`）按应用隐藏标题栏、把边框设成 0。Oxygen / Aurorae 等没有这套按应用生效的覆盖，换成它们功能不成立。（KDecoration3 版 Breeze 要求 Plasma ≥ 6.3，已被上面的 6.6 下限覆盖。） |
-| **会话** | Wayland | 走的是 `xdg-decoration` / `xdg-toplevel-decoration` 那条路。X11 下同样的规则也会命中，但没实测过。 |
-| **运行时** | `kpackagetool6`、`qdbus6`（KF6，随 Plasma 6 一起来）、`python3`、`python3-dbus`、`python3-gi` | 安装脚本用 `kpackagetool6` 装 KWin 脚本、`qdbus6` 让 KWin 重读配置；D-Bus 守护进程用 dbus-python + GLib 主循环。deb / PKGBUILD 里都已声明。 |
+| **Plasma / KWin** | **≥ 6.6** (development environment: KDE neon / Plasma 6.7.5) | "Force server-side decorations via a window rule" only exists from 6.6 onwards: [kwin@bcdceae2](https://invent.kde.org/plasma/kwin/-/commit/bcdceae2) replaced the overloaded `noborder` boolean with `DecorationPolicy`, and in `WindowRules::checkDecorationPolicy()` a `noborder=false` (force) maps to `DecorationPolicy::Server`. On 6.5 and earlier, `XdgToplevelWindow::preferredDecorationMode()` only returns `None` when `noborder=true` — there is no "force Server" tier at all, so it has no effect on clients that draw their own CSD or want no decorations (GTK, Tauri `decorations:false`). |
+| **Decoration plugin** | **Breeze only** (`org.kde.breeze`) | The tool relies on Breeze's window-specific overrides (`[Windeco Exception N]` in `breezerc`) to hide the title bar and set the border to 0 per app. Oxygen / Aurorae and others have no such per-app override mechanism; switching to them breaks the feature. (The KDecoration3 variant of Breeze requires Plasma ≥ 6.3, already covered by the 6.6 floor above.) |
+| **Session** | Wayland | This works through the `xdg-decoration` / `xdg-toplevel-decoration` path. The same rules would also match under X11, but that has not been tested. |
+| **Runtime** | `kpackagetool6`, `qdbus6` (KF6, shipped with Plasma 6), `python3`, `python3-dbus`, `python3-gi` | The install script uses `kpackagetool6` to install the KWin script and `qdbus6` to make KWin re-read its config; the D-Bus daemon uses dbus-python with a GLib main loop. All declared in the deb / PKGBUILD. |
 
-两条和版本绑定的行为（细则分别在「原理」和「已知限制」里）：
+Two behaviors tied to versions (details under "How it works" and "Known limitations"):
 
-- **顶边缩放要 Plasma ≥ 6.8**：Breeze 6.7 及更早把 `setResizeOnlyBorders()` 的顶边写死成 0，上游已经修了（[breeze@6177e54b](https://invent.kde.org/plasma/breeze/-/commit/6177e54b4b1ef02bf0882be3b7dca1fadbe4f196)，bug [504225](https://bugs.kde.org/show_bug.cgi?id=504225)，FIXED-IN 6.8.0），本工具不需要为此改任何东西；6.7 及更早的兜底见「已知限制」。
-- **Plasma ≥ 6.8 会改写规则键**：6.8 用三态 `decorationpolicy` 取代了 `noborder`（[kwin@065adbd3](https://invent.kde.org/plasma/kwin/-/commit/065adbd3)），旧键由 KWin 自己迁移。后端照旧写旧键、并且两种键形态都认，所以迁移既不影响功能，也不会引起规则重建 —— 细节见「原理」。
+- **Top-edge resizing needs Plasma ≥ 6.8**: Breeze 6.7 and earlier hard-codes the top edge of `setResizeOnlyBorders()` to 0; upstream has fixed it ([breeze@6177e54b](https://invent.kde.org/plasma/breeze/-/commit/6177e54b4b1ef02bf0882be3b7dca1fadbe4f196), bug [504225](https://bugs.kde.org/show_bug.cgi?id=504225), FIXED-IN 6.8.0), and this tool needs no changes for that; the fallback on 6.7 and earlier is under "Known limitations".
+- **Plasma ≥ 6.8 rewrites the rule keys**: 6.8 replaced `noborder` with the tri-state `decorationpolicy` ([kwin@065adbd3](https://invent.kde.org/plasma/kwin/-/commit/065adbd3)); the old keys are migrated by KWin itself. The backend keeps writing the old keys and accepts both key shapes, so the migration neither affects functionality nor causes rule rebuilds — details under "How it works".
 
-## 安装
+## Installation
 
-### 发行版包（普通用户，推荐）
+### Distribution package (regular users, recommended)
 
-KDE neon / Ubuntu 用仓库里的 deb：
+For KDE neon / Ubuntu, use the deb from this repository:
 
 ```bash
 packaging/make-deb.sh                                  # → packaging/build/kwin-windowborder_1.0_all.deb
-sudo apt install ./kwin-windowborder_1.0_all.deb        # 或者 Discover 里双击
+sudo apt install ./kwin-windowborder_1.0_all.deb        # or double-click it in Discover
 ```
 
-装完**注销重登一次**（让 KWin 加载脚本、并让 D-Bus 服务自启动），之后就完事了 —— 不需要配置、不需要启用命令。包是 `Architecture: all`（纯文本 + 纯 Python），依赖只有 `python3-dbus`、`python3-gi` 和 `kwin-wayland (>= 4:6.6)`（下限的原因见上面「版本要求」；更早的 Plasma 会被 apt 直接挡住，而不是装完没反应）。
+After installing, **log out and back in once** (so KWin loads the script and the D-Bus service autostarts). That's it — no configuration, no command to enable. The package is `Architecture: all` (plain text + pure Python); the only dependencies are `python3-dbus`, `python3-gi` and `kwin-wayland (>= 4:6.6)` (the reason for the floor is under "Requirements" above; older Plasma is blocked by apt instead of installing and silently doing nothing).
 
-打包细节（deb / PKGBUILD / KDE Store）见 [packaging/README.md](packaging/README.md)。
+Packaging details (deb / PKGBUILD / KDE Store) are in [packaging/README.md](packaging/README.md).
 
-### 源码（开发者 / 不想装包）
+### From source (developers / no package)
 
 ```bash
-tools/kwin-windowborder-menu-setup.sh install     # 用户级，不需要 root
+tools/kwin-windowborder-menu-setup.sh install     # user-level, no root needed
 ```
 
-它做四件事：
+It does four things:
 
-1. `kpackagetool6 --type KWin/Script` 把 `extension/` 装到 `~/.local/share/kwin/scripts/windowborder-menu`；
-2. 把后端和 D-Bus 服务装到 `~/.local/bin/`，并在 `~/.local/share/dbus-1/services/`、`~/.config/autostart/` 各放一个文件（按需激活 + 登录常驻）；
-3. 打开 `kwinrc [Plugins] windowborder-menuEnabled`，把旧脚本实例卸掉再用新文件加载；
-4. 按现有名单同步一次规则。
+1. `kpackagetool6 --type KWin/Script` installs `extension/` into `~/.local/share/kwin/scripts/windowborder-menu`;
+2. installs the backend and the D-Bus service into `~/.local/bin/`, and drops one file each into `~/.local/share/dbus-1/services/` and `~/.config/autostart/` (activation on demand + resident at login);
+3. flips `kwinrc [Plugins] windowborder-menuEnabled` on, unloads the old script instance and loads the new files;
+4. syncs the rules once according to the current list.
 
-其它子命令：`status` / `restart` / `reapply` / `uninstall`。
+Other subcommands: `status` / `restart` / `reapply` / `uninstall`.
 
-## 使用
+## Usage
 
-### 窗口菜单
+### Window menu
 
 ```
-Alt+F3 或 标题栏右键
-└── 扩展
-    └── 窗口边框
-        ├── 已启用边框：dbx        ← 勾选状态 = 这个应用当前在不在名单里
-        └── 重新应用边框设置
+Alt+F3 or right-click a title bar
+└── More Actions
+    └── Window Border
+        ├── Border enabled: dbx        ← checked state = whether this app is currently in the list
+        └── Re-apply border settings
 ```
 
-点第一项就是「加/去边框」，1~2 秒后生效（后端要写配置，再让 KWin 和每个装饰重新读一次）。
+Clicking the first item adds or removes the border; it takes effect after 1–2 seconds (the backend writes config, then makes KWin and every decoration re-read it).
 
-### 设置面板
+### Settings panel
 
-系统设置 → 窗口管理 → KWin 脚本 → **Window Border** → 配置，一行「启用的应用」，逗号分隔的窗口类（Wayland 的 `app_id`，例如 `dbx,deepseek-harness-desktop`）。
+System Settings → Window Management → KWin Scripts → **Window Border** → Configure — a single "Enabled applications" line with comma-separated window classes (the Wayland `app_id`, e.g. `dbx,deepseek-harness-desktop`).
 
-保存后面板只是写了 `kwinrc [Script-windowborder-menu] apps`；D-Bus 服务盯着这个文件，发现变化就同步成规则，所以同样是立即生效。
+On save, the panel only writes `kwinrc [Script-windowborder-menu] apps`; the D-Bus service watches that file and syncs it into rules as soon as it changes, so this takes effect immediately too.
 
-### 命令行（同一份逻辑，不走 GUI）
+### Command line (same logic, no GUI)
 
 ```bash
-windowborder-native add dbx                 # 给应用加边框
-windowborder-native remove dbx              # 取消
-windowborder-native status                  # 查看状态
-windowborder-native set BorderSize Tiny     # 换边框粗细
-windowborder-native set HideTitleBar false  # 保留标题栏（见「已知限制」）
-windowborder-native apply                   # 按当前配置重新生成并生效
-windowborder-native reset                   # 清掉本工具的全部配置
+windowborder-native add dbx                 # add a border to an app
+windowborder-native remove dbx              # remove it
+windowborder-native status                  # show status
+windowborder-native set BorderSize Tiny     # change the border width
+windowborder-native set HideTitleBar false  # keep the title bar (see "Known limitations")
+windowborder-native apply                   # regenerate and apply from the current config
+windowborder-native reset                   # wipe all configuration made by this tool
 ```
 
-`add` / `remove` / `set` 内部本来就等于「改配置 + apply」，所以它们一直都是即时生效的。`apply` 单独存在是给「不改配置、只重新生成并生效」用的，主要用于：手改了 `~/.config/windowborder-native.conf`；规则被 KWin 升级、或你在「系统设置 → 窗口规则」里手动删掉而丢失；或者装饰没拿到最新覆盖（下面那个 KGlobalSettings 竞态）时重试。
+`add` / `remove` / `set` are internally just "change config + apply", so they are always immediate. `apply` exists on its own for "don't change config, just regenerate and apply", mainly for: hand-editing `~/.config/windowborder-native.conf`; rules lost to a KWin upgrade or to manual deletion in System Settings → Window Rules; or retrying when a decoration didn't pick up the newest override (the KGlobalSettings race below).
 
-## 原理
+## How it works
 
-两步都是 KWin/Breeze 的原生机制，没有自研插件、没有补丁。
+Both steps are native KWin/Breeze mechanisms — no custom plugin, no patch.
 
-1. **KWin 窗口规则**（`~/.config/kwinrulesrc`）：每个应用一条 `wmclass=<app_id>` 精确匹配的规则，`noborder=false` + `noborderrule=2`（「无标题栏和边框 = 否，强制」；`Rules::Force`）。`rules.cpp` 里 `checkDecorationPolicy()`：
+1. **KWin window rules** (`~/.config/kwinrulesrc`): one rule per app with an exact `wmclass=<app_id>` match, `noborder=false` + `noborderrule=2` ("no title bar and frame = no, force"; `Rules::Force`). In `rules.cpp`, `checkDecorationPolicy()`:
 
    ```cpp
    if (checkNoBorder(true, init) == false) return DecorationPolicy::Server;
    ```
 
-   于是该窗口的 `decorationPolicy` 变成 `Server`，KWin 为它创建服务端装饰，并通过 `xdg-decoration` 发 `configure(server_side)` 通知客户端。这条路径从 Plasma 6.6 起存在（见「版本要求」）。
+   So the window's `decorationPolicy` becomes `Server`, KWin creates server-side decorations for it, and notifies the client with `configure(server_side)` via `xdg-decoration`. This path has existed since Plasma 6.6 (see "Requirements").
 
-   **Plasma 6.8 起**这套键换成了三态 `decorationpolicy`（`none` / `client-preference` / `server` / `shadow`）。KWin 读 `kwinrulesrc` 时会把我们写的 `noborder=false` + `noborderrule=2` **就地迁移**成 `decorationpolicy=server` + `decorationpolicyrule=2`，并把旧的 `noborder*` 键删掉（`src/rulebooksettings.cpp`，注释写明 Plasma 7 之前保留这条迁移路径）。所以本工具照旧写旧键就行：6.6/6.7 直接认，6.8+ 由 KWin 迁移。判断「规则是否已生效」时两种键形态都算数（后端里的 `FORCE_RULE_KEYS`），否则 KWin 迁移过一次之后，每次 `apply` 都会以为规则丢了而把规则重建一遍。
+   **From Plasma 6.8 on**, these keys are replaced by the tri-state `decorationpolicy` (`none` / `client-preference` / `server` / `shadow`). When reading `kwinrulesrc`, KWin **migrates in place** the `noborder=false` + `noborderrule=2` we write into `decorationpolicy=server` + `decorationpolicyrule=2` and deletes the old `noborder*` keys (`src/rulebooksettings.cpp`; the comment says the migration path is kept until Plasma 7). So this tool keeps writing the old keys: 6.6/6.7 accept them directly, 6.8+ migrates them. When deciding "is the rule in effect", both key shapes count (the backend's `FORCE_RULE_KEYS`) — otherwise, once KWin has migrated them, every `apply` would think the rules were lost and rebuild them.
 
-2. **Breeze 窗口特定覆盖**（`~/.config/breezerc`，组 `[Windeco Exception N]`）：按窗口类匹配，设 `HideTitleBar=true`、`BorderSize=None`、`Mask=16`。于是：
+2. **Breeze window-specific overrides** (`~/.config/breezerc`, group `[Windeco Exception N]`): matched by window class, with `HideTitleBar=true`, `BorderSize=None`, `Mask=16`. Therefore:
 
-   - 边框为 0 → **窗口几何完全不变**，不挤压客户端内容；
-   - 隐藏标题栏 → 不会和客户端自己画的标题栏叠成双层；
-   - 保留 1px outline → 这就是可见的边框（活动/非活动配色不同）；
-   - `BorderSize=None` 时 Breeze 会 `setResizeOnlyBorders(左右/下)` → 鼠标拖这三条边可以缩放窗口（Plasma ≤ 6.7 只有这三条，6.8 起顶边也在内，见「已知限制」）。
+   - border size 0 → **the window geometry is completely unchanged** and no client content is squeezed;
+   - title bar hidden → it won't stack as a second layer on top of the title bar the client draws itself;
+   - the 1px outline is kept → that is the visible border (active/inactive use different colors);
+   - with `BorderSize=None`, Breeze calls `setResizeOnlyBorders(left/right/bottom)` → dragging those three edges resizes the window (only those three on Plasma ≤ 6.7; from 6.8 the top edge is included too, see "Known limitations").
 
-**为什么标题栏一定要藏**：我们处理的窗口本来就是「无系统标题栏 + 无装饰」（Tauri/WebView 自绘标题栏，或者 GTK 画 CSD），强制服务端装饰之后装饰自带的标题栏必须藏掉 —— 不藏的话，遵守 `xdg-decoration` 的客户端会撤掉自己的 CSD、换上一个 Breeze 标题栏；不遵守的（Tauri `decorations:false`）会变成「应用自己的标题栏 + Breeze 标题栏」双层。反过来，**有系统标题栏的窗口必然已经有窗口装饰**，它们不在处理范围内。所以 `HideTitleBar=true` + `BorderSize=None` 是写死的默认值，设置面板里也不需要这个开关。
+**Why the title bar must be hidden**: the windows we handle are by definition "no system title bar + no decoration" (Tauri/WebView drawing their own title bar, or GTK drawing CSD). Once server-side decorations are forced, the title bar that comes with the decoration must be hidden — otherwise clients that honor `xdg-decoration` drop their own CSD and get a Breeze title bar instead, and clients that don't (Tauri `decorations:false`) end up with "the app's own title bar + a Breeze title bar" stacked. Conversely, **windows that have a system title bar already have window decorations**, so they are out of scope. That is why `HideTitleBar=true` + `BorderSize=None` are hard-coded defaults and the settings panel does not need that switch.
 
-生效方式（后端内置）：
+How it takes effect (built into the backend):
 
 ```bash
 qdbus6 org.kde.KWin /KWin org.kde.KWin.reconfigure
-# reconfigure 是 Q_NOREPLY，等 KWin 处理完（它会重新解析 breezerc），
-# 再让每个装饰重取一次设置 —— Breeze 的 Decoration::reconfigure() 挂在这个信号上：
+# reconfigure is Q_NOREPLY; wait for KWin to finish (it re-parses breezerc),
+# then make every decoration re-fetch its settings — Breeze's
+# Decoration::reconfigure() is connected to this signal:
 dbus-send --session --type=signal /KGlobalSettings \
           org.kde.KGlobalSettings.notifyChange int32:0 int32:0
 ```
 
-第二步不能省，否则装饰拿到的是上一轮的覆盖（表现为「慢一拍生效」）。
+The second step cannot be skipped, otherwise decorations get the previous round of overrides (which shows up as "taking effect one step late").
 
-### 为什么不是自研效果 / 自研装饰插件
+### Why not a custom effect / custom decoration plugin
 
-- **自研 KWin 效果（C++）**：画边框必须写二进制效果插件（KWin 脚本没有绘制能力）。但那样就等于在合成层之上再画一层，拖拽、窗口动画、遮挡、圆角、多屏缩放全得自己处理，还处理不干净（本项目早期版本就是这么做的，已经删掉了，见提交 `d910de0`）。
-- **自研装饰插件**：`DecorationBridge` 全局只加载**一个**装饰插件（`kwinrc [org.kde.kdecoration2] library`），窗口规则里也没有按窗口选插件的选项。自研插件一旦启用就是全桌面生效，非名单内的窗口会全部失去标题栏 —— 除非在插件里重新实现一整套标准装饰。
-- 正确做法就是 Breeze **自带的**窗口特定覆盖：它本身就是「装饰插件读配置文件、按应用生效」。
+- **Custom KWin effect (C++)**: drawing a border requires a binary effect plugin (KWin scripts cannot paint). But that means painting a layer on top of the compositor, so dragging, window animations, occlusion, rounded corners and multi-monitor scaling would all have to be handled by hand — and never cleanly (early versions of this project did exactly that; it has been removed, see commit `d910de0`).
+- **Custom decoration plugin**: `DecorationBridge` loads exactly **one** decoration plugin globally (`kwinrc [org.kde.kdecoration2] library`), and window rules have no per-window plugin selector. Once a custom plugin is enabled it applies to the whole desktop, and every window not on the list loses its title bar — unless a full standard decoration is reimplemented inside the plugin.
+- The right answer is Breeze's **built-in** window-specific overrides: that mechanism already is "a decoration plugin reading a config file and applying per app".
 
-### 为什么需要一个常驻的 D-Bus 服务
+### Why a resident D-Bus service is needed
 
-KWin 脚本（`KWin/Script` 的 JS 扩展）能用的 API 只有 `readConfig` / `callDBus` / `registerShortcut` / 屏幕边缘 / `registerUserActionsMenu` / `workspace` / `options` / `QTimer`（见 kwin 源码 `src/scripting/scripting.cpp` 里的 `globalProperties` 列表）—— **不能写文件，也不能起进程**。而加边框必须改 `~/.config/kwinrulesrc` 和 `~/.config/breezerc`。所以扩展只做 UI，把「要做什么」用 `callDBus` 交给 `windowborder-daemon`：
+The only APIs available to a KWin script (a `KWin/Script` JS extension) are `readConfig` / `callDBus` / `registerShortcut` / screen edges / `registerUserActionsMenu` / `workspace` / `options` / `QTimer` (see the `globalProperties` list in kwin's `src/scripting/scripting.cpp`) — it **cannot write files or spawn processes**. But adding a border requires editing `~/.config/kwinrulesrc` and `~/.config/breezerc`. So the extension only does the UI and hands "what to do" to `windowborder-daemon` via `callDBus`:
 
-| 谁 | 怎么触发 | 结果 |
+| Who | Trigger | Result |
 | --- | --- | --- |
-| 窗口菜单 | `callDBus("org.kde.windowborder", …, "AddApp"/"RemoveApp", app)` | 守护进程调后端写配置并生效 |
-| 设置面板 | 面板只写 `kwinrc` | 守护进程每 2 秒看一眼 `kwinrc` → 触发同步 |
+| Window menu | `callDBus("org.kde.windowborder", …, "AddApp"/"RemoveApp", app)` | the daemon calls the backend to write the config and apply |
+| Settings panel | the panel only writes `kwinrc` | the daemon checks `kwinrc` every 2 seconds → triggers a sync |
 
-守护进程的启动有两层，互为兜底：`/usr/share/dbus-1/services/org.kde.windowborder.service`（D-Bus 按需激活，所以点菜单一定能拉起它）和 `/etc/xdg/autostart/windowborder-daemon.desktop`（登录即常驻，这样设置面板那条路随时有人盯着）。两个文件都是"放着就生效"，**不需要任何 per-user 的启用步骤**。
+The daemon is started through two layers that back each other up: `/usr/share/dbus-1/services/org.kde.windowborder.service` (D-Bus activation on demand, so clicking the menu always brings it up) and `/etc/xdg/autostart/windowborder-daemon.desktop` (resident at login, so the settings-panel path always has a watcher). Both are "drop in and it works" — **no per-user enabling step**.
 
-其它要点：
+Other points:
 
-- **缺了它会怎样**：只有扩展本体（比如只从 KDE Store 装了 `.kwinscript`）时，`kwinrc [Script-windowborder-menu] backend=dbus` 没人写，菜单里就只显示一条「后端未安装」的提示，而不是点了没反应；
-- **扩展本体装不了守护进程**：`KWin/Script` 的 KPackage 就是一堆文件，`kpackagetool6 -i` 只做拷贝，没有安装钩子，KWin 也不会替脚本跑命令。要么像本仓库这样用安装脚本，要么用发行版包（推荐）；
-- 想换后端实现只需要改脚本里 `sendRequest()` 那一处。
+- **What happens without it**: with only the extension itself (e.g. a `.kwinscript` installed from the KDE Store), nothing writes `kwinrc [Script-windowborder-menu] backend=dbus`, so the menu just shows a "backend not installed" notice instead of silently doing nothing on click;
+- **The extension alone cannot install the daemon**: a `KWin/Script` KPackage is just a bunch of files, `kpackagetool6 -i` only copies them, there is no install hook, and KWin will not run commands for a script. Either use an install script like this repo's, or use a distribution package (recommended);
+- Swapping the backend implementation only requires changing `sendRequest()` in the script.
 
-### kwinrc 里的三个键
+### The three keys in kwinrc
 
-`kwinrc [Script-windowborder-menu]`：
+`kwinrc [Script-windowborder-menu]`:
 
-- `apps`：设置面板编辑的就是它（`extension/contents/config/main.xml` 里声明的唯一配置项）；
-- `mirror`：后端上一次镜像写下的值，用来区分「面板改了名单」和「我们自己回写造成的回声」，也用来区分「键根本不存在」。语义（`panel_changed_list()`）：`apps` 不存在 → 不当成指令，什么都不做；`apps` 等于 `mirror` → 是回声；其它 → 以 `apps` 为准（空字符串 = 清空名单）。没有 `mirror` 这一层的话，一个键被误删就会被当成「用户清空了名单」，把规则和 Breeze 覆盖一起清掉；
-- `backend`：守护进程写下的标记（`dbus`），扩展读它决定菜单里显示真条目还是安装提示。
+- `apps`: what the settings panel edits (the only config item declared in `extension/contents/config/main.xml`);
+- `mirror`: the value the backend last wrote when mirroring; it distinguishes "the panel changed the list" from "the echo of our own write-back", and "the key doesn't exist at all". Semantics (`panel_changed_list()`): `apps` missing → not a command, do nothing; `apps` equal to `mirror` → it is an echo; anything else → `apps` wins (empty string = clear the list). Without the `mirror` layer, an accidentally deleted key would be read as "the user cleared the list" and wipe both the rules and the Breeze overrides;
+- `backend`: the marker written by the daemon (`dbus`); the extension reads it to decide whether to show the real entries or the install notice.
 
-### 一个坑：`[Plugins]` 键是效果和脚本共用的
+### One gotcha: the `[Plugins]` key is shared by effects and scripts
 
-KWin 的效果和脚本都从 `kwinrc [Plugins]` 读 `<id>Enabled`。所以脚本 id **不能**叫 `windowborder`（那会和同名的 C++ 效果抢同一个键，互相把对方打开），这里的脚本叫 `windowborder-menu`，配置组因此是 `[Script-windowborder-menu]`。
+KWin effects and scripts both read `<id>Enabled` from `kwinrc [Plugins]`. So the script id **must not** be `windowborder` (it would fight over the same key with a C++ effect of the same name, each turning the other on); the script here is called `windowborder-menu`, hence the config group `[Script-windowborder-menu]`.
 
-## 已知限制
+## Known limitations
 
-- **`decorationPolicy` 是单向的**：加规则会变 `Server`，删规则不会自动回滚（`Window::applyWindowRules()` 里是 `setDecorationPolicy(decorationPolicy())`，把当前值又传了回去）。所以 `remove` 之后，那个窗口要**重启应用**才会完全恢复客户端自带的装饰。
-- 会遵守 `xdg-decoration` 的客户端（GTK/libadwaita）收到 `server_side` 后会撤掉自己的 CSD，于是窗口变成「只有边框、没有标题栏」。想让它们保留标题栏，用 `set HideTitleBar false`。
-- 不遵守协议的客户端（Tauri `decorations:false`）会保留自己画的标题栏，结果是「应用自己的标题栏 + 一圈边框」——这不是双层标题栏。
-- **上边不能拖动缩放（Plasma ≤ 6.7）**：这是「隐藏标题栏 + `BorderSize=None`」在旧版 Breeze 上的直接副作用，不是配置错误。Breeze 的 `recalculateBorders()` 里
+- **`decorationPolicy` is one-way**: adding a rule changes it to `Server`, but removing the rule does not roll it back automatically (`Window::applyWindowRules()` calls `setDecorationPolicy(decorationPolicy())`, passing the current value back in). So after `remove`, that window only fully gets its client-side decorations back after **restarting the app**.
+- Clients that honor `xdg-decoration` (GTK/libadwaita) drop their own CSD once they receive `server_side`, so the window becomes "border only, no title bar". To keep their title bar, use `set HideTitleBar false`.
+- Clients that don't honor the protocol (Tauri `decorations:false`) keep drawing their own title bar, resulting in "the app's own title bar + a border" — that is not a double title bar.
+- **The top edge cannot be dragged to resize (Plasma ≤ 6.7)**: this is a direct side effect of "hidden title bar + `BorderSize=None`" on older Breeze, not a configuration error. In Breeze's `recalculateBorders()`:
 
   ```cpp
-  setResizeOnlyBorders(QMarginsF(extSides, 0, extSides, extBottom));   // 顶边恒为 0（≤ 6.7）
+  setResizeOnlyBorders(QMarginsF(extSides, 0, extSides, extBottom));   // top edge always 0 (≤ 6.7)
   ```
 
-  上游已经修了：[breeze@6177e54b](https://invent.kde.org/plasma/breeze/-/commit/6177e54b4b1ef02bf0882be3b7dca1fadbe4f196)（bug [504225](https://bugs.kde.org/show_bug.cgi?id=504225)，FIXED-IN 6.8.0）给顶边补上了 `extTop = largeSpacing`，所以 **Plasma ≥ 6.8 四条边都能拖，窗口几何和外观依旧零变化**（加的是窗口外侧一条 `largeSpacing` 宽的输入圈，随字体/缩放约 16px，不抢客户区点击）。还留在 6.7 及更早的话，兜底是默认的 `Meta` + 右键拖拽：它按指针在窗口内的位置取 gravity，在上 1/3 按下就是从顶边缩放（`[MouseBindings] CommandAll3 = MouseUnrestrictedResize`）。
+  Upstream has fixed it: [breeze@6177e54b](https://invent.kde.org/plasma/breeze/-/commit/6177e54b4b1ef02bf0882be3b7dca1fadbe4f196) (bug [504225](https://bugs.kde.org/show_bug.cgi?id=504225), FIXED-IN 6.8.0) added `extTop = largeSpacing` to the top edge, so **on Plasma ≥ 6.8 all four edges can be dragged, with zero change to window geometry and appearance** (what is added is an input strip `largeSpacing` wide outside the window, roughly 16px depending on font/scaling, which does not steal clicks from the client area). Still on 6.7 or earlier, the fallback is the default `Meta` + right-click drag: it picks the gravity from the pointer's position inside the window, so pressing in the top third resizes from the top edge (`[MouseBindings] CommandAll3 = MouseUnrestrictedResize`).
 
-  想在旧版上做到「无痕顶边缩放」，也可以选一个非 `None` 的 `BorderSize`，代价是出现可见实边框并改变窗口几何。各档实测像素占用：
+  To get seamless top-edge resizing on older versions you can also pick a non-`None` `BorderSize`, at the cost of a visible solid border that changes window geometry. Measured pixels per step:
 
-  | `BorderSize` | 上 | 下 | 左 | 右 | 说明 |
+  | `BorderSize` | Top | Bottom | Left | Right | Notes |
   | --- | --- | --- | --- | --- | --- |
-  | `None`（默认） | 0 | 0 | 0 | 0 | 只有 1px outline，几何零变化；左/右/下可缩放，**顶边只在 6.8+ 可拖** |
-  | `NoSides` | 4.5 | 4.5 | 0 | 0 | 上下为实边框（可抓），左右仍是 resize-only |
-  | `Tiny` | 4 | 4 | 2 | 2 | 四面实边框，四条边都可缩放 |
-  | `Normal` | 4 | 4 | 4 | 4 | 同上，更粗 |
+  | `None` (default) | 0 | 0 | 0 | 0 | 1px outline only, zero geometry change; left/right/bottom resizable, **top only draggable on 6.8+** |
+  | `NoSides` | 4.5 | 4.5 | 0 | 0 | solid border on top/bottom (grabbable), left/right still resize-only |
+  | `Tiny` | 4 | 4 | 2 | 2 | solid border on all four sides, all edges resizable |
+  | `Normal` | 4 | 4 | 4 | 4 | same, thicker |
 
-- 边框**颜色跟随 Breeze 主题与配色方案**，不能单独指定；`BorderSize=None` 只有 1px 细线。
-- 全屏窗口不受影响（`preferredDecorationMode()` 对 fullscreen 直接返回 `None`）。
-- 从点击到看见边框大约 1~2 秒：后端写文件 → `reconfigure` → 等 KWin 和装饰重取设置。
-- 规则只作用于普通窗口（`types=1`）；面板、桌面、通知、工具提示不处理。
-- 守护进程常驻一份 Python 进程（约 15~20 MB）。它退出后菜单仍然能用（D-Bus 会按需拉起），但设置面板保存后没人盯着 `kwinrc`，要等下一次菜单操作才会同步。
+- The border **color follows the Breeze theme and color scheme** and cannot be set separately; `BorderSize=None` is only the 1px thin line.
+- Fullscreen windows are unaffected (`preferredDecorationMode()` returns `None` for fullscreen).
+- It takes roughly 1–2 seconds from clicking to seeing the border: the backend writes files → `reconfigure` → wait for KWin and the decorations to re-read settings.
+- The rules only apply to normal windows (`types=1`); panels, the desktop, notifications and tooltips are not handled.
+- The daemon keeps one resident Python process (about 15–20 MB). If it exits, the menu still works (D-Bus activates it on demand), but after the settings panel saves, nobody is watching `kwinrc` — it only syncs on the next menu action.
 
-## 卸载
+## Uninstall
 
 ```bash
-tools/kwin-windowborder-menu-setup.sh uninstall   # 卸载扩展、后端和 D-Bus 服务，保留规则
-windowborder-native reset                         # 连 kwinrulesrc 规则和 Breeze 覆盖一起清掉
+tools/kwin-windowborder-menu-setup.sh uninstall   # remove the extension, backend and D-Bus service; keep the rules
+windowborder-native reset                         # also clear the kwinrulesrc rules and the Breeze overrides
 ```
 
-用 deb 装的：`sudo apt remove kwin-windowborder`（同样保留已生成的规则；要清干净再跑一次 `reset`）。
+Installed via deb: `sudo apt remove kwin-windowborder` (also keeps the generated rules; run `reset` once more to clean up completely).
 
-## 目录结构
+## Repository layout
 
 ```
-extension/metadata.json                    KWin 脚本扩展元数据（KPackage，KWin/Script）
-extension/contents/code/main.js            窗口菜单：加/去边框、重新应用、后端缺失提示
-extension/contents/config/main.xml         设置面板的配置项（apps）
-extension/contents/ui/config.ui            设置面板界面
-tools/windowborder-native.py               后端 + 命令行（写 kwinrulesrc/breezerc 的唯一实现）
-tools/windowborder-daemon.py               D-Bus 服务：菜单请求 + 盯 kwinrc
-tools/kwin-windowborder-menu-setup.sh      用户级安装/卸载/状态/重启/重新应用
-packaging/install-layout.sh                系统级布局（打包脚本和 debian/rules 共用这一份清单）
-packaging/make-deb.sh                      不依赖 debhelper 直接出 .deb
-packaging/pack.sh                          打 KDE Store 用的 .kwinscript
-packaging/PKGBUILD                         Arch/AUR 骨架
-packaging/files/                           D-Bus 激活 + 自启动的模板
-debian/                                    dpkg-buildpackage（PPA / OBS）用的打包目录
-man/                                       两个命令行工具的 man page
+extension/metadata.json                    KWin script extension metadata (KPackage, KWin/Script)
+extension/contents/code/main.js            window menu: add/remove border, re-apply, missing-backend notice
+extension/contents/config/main.xml         settings panel config item (apps)
+extension/contents/ui/config.ui            settings panel UI
+tools/windowborder-native.py               backend + CLI (the only implementation that writes kwinrulesrc/breezerc)
+tools/windowborder-daemon.py               D-Bus service: menu requests + watching kwinrc
+tools/kwin-windowborder-menu-setup.sh      user-level install/uninstall/status/restart/re-apply
+packaging/install-layout.sh                system-level layout (shared manifest for the packaging scripts and debian/rules)
+packaging/make-deb.sh                      build a .deb without debhelper
+packaging/pack.sh                          build the KDE Store .kwinscript
+packaging/PKGBUILD                         Arch/AUR skeleton
+packaging/files/                           D-Bus activation + autostart templates
+debian/                                    packaging directory for dpkg-buildpackage (PPA / OBS)
+man/                                       man pages for the two command-line tools
 ```
 
-## 许可
+## License
 
-GPL-2.0-or-later（与 KWin 插件接口要求一致）。
+GPL-2.0-or-later (matching the KWin plugin interface requirements).
