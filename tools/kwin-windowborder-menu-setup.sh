@@ -255,7 +255,7 @@ reapply)
 
 窗口菜单和设置面板都只是「发请求」的入口，真正写 kwinrulesrc + breezerc 的是
 $(python_bin) ${BACKEND_SRC}（由常驻的 windowborder-daemon 调用）。
-发行版包的安装方式见 packaging/README.md。
+发行版包的安装方式见 packaging/README.zh-CN.md。
 EOF
     exit 1
     ;;

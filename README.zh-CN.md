@@ -43,7 +43,7 @@ sudo apt install ./kwin-windowborder_1.0_all.deb        # 或者 Discover 里双
 
 装完**注销重登一次**（让 KWin 加载脚本、并让 D-Bus 服务自启动），之后就完事了 —— 不需要配置、不需要启用命令。包是 `Architecture: all`（纯文本 + 纯 Python），依赖只有 `python3-dbus`、`python3-gi` 和 `kwin-wayland (>= 4:6.6)`（下限的原因见上面「版本要求」；更早的 Plasma 会被 apt 直接挡住，而不是装完没反应）。
 
-打包细节（deb / PKGBUILD / KDE Store）见 [packaging/README.md](packaging/README.md)。
+打包细节（deb / PKGBUILD / KDE Store）见 [packaging/README.zh-CN.md](packaging/README.zh-CN.md)。
 
 ### 源码（开发者 / 不想装包）
 
